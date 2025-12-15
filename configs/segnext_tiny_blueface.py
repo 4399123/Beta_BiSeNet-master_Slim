@@ -1,0 +1,20 @@
+
+cfg = dict(
+    model_type='segnext_tiny',
+    n_cats=9,
+    num_aux_heads=2,
+    lr_start=0.00005,
+    weight_decay=2e-4,
+    max_epochs=300,
+    dataset='BlueFaceDataset',
+    im_root='../../BlueFaceDataX2',
+    train_im_anns='../../BlueFaceDataX2/train.txt',
+    val_im_anns='../../BlueFaceDataX2/val.txt',
+    scales=[0.85, 1.15],
+    cropsize=[512, 512],
+    ims_per_gpu=48,
+    eval_ims_per_gpu=1,
+    use_fp16=True,
+    use_sync_bn=True,
+    respth='./res',
+)

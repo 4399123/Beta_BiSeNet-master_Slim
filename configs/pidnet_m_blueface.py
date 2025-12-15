@@ -1,0 +1,20 @@
+
+cfg = dict(
+    model_type='pidnet_m',
+    n_cats=9,
+    num_aux_heads=2,
+    lr_start=0.0003,
+    weight_decay=5e-4,
+    max_epochs=300,
+    dataset='BlueFaceDataset',
+    im_root='../../BlueFaceDataX2',
+    train_im_anns='../../BlueFaceDataX2/train.txt',
+    val_im_anns='../../BlueFaceDataX2/val.txt',
+    scales=[0.75, 1.25],
+    cropsize=[224, 224],
+    ims_per_gpu=2,
+    eval_ims_per_gpu=1,
+    use_fp16=False,
+    use_sync_bn=False,
+    respth='./res',
+)

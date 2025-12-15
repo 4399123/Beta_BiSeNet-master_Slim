@@ -1,0 +1,133 @@
+
+docker run -it -d --name zl_gpu1_178 --gpus all -v /home/appadmin:/opt/zl_gpu1_178 --shm-size 32G  anaconda3:1.0
+docker run -it -d --name zl_gpu2_178 --gpus all -v /home/appadmin:/opt/zl_gpu2_178 --shm-size 12G  anaconda3:1.0
+docker run -it -d --name zl_gpu3_178 --gpus all -v /home/appadmin:/opt/zl_gpu3_178 --shm-size 12G  anaconda3:1.0
+
+
+docker run -it -d --name zl_gpu6 --gpus all -v /home/appadmin:/opt/zl_gpu6 --shm-size 32G  anaconda3:1.0
+docker run -it -d --name zl_gpu5 --gpus all -v /home/appadmin:/opt/zl_gpu5 --shm-size 32G  anaconda3:1.0
+docker run -it -d --name zl_gpu4 --gpus all -v /home/appadmin:/opt/zl_gpu4 --shm-size 32G  anaconda3:1.0
+docker run -it -d --name zl_gpu3 --gpus all -v /home/appadmin:/opt/zl_gpu3 --shm-size 32G  anaconda3:1.0
+docker run -it -d --name zl_gpu2 --gpus all -v /home/appadmin:/opt/zl_gpu2  anaconda3:1.0
+docker run -it -d --name zl_gpu --gpus all -v /home/appadmin:/opt/env1207  anaconda3:1.0
+docker run -it -d --name hmy_yolo --gpus all -v /home/appadmin:/opt/hmy_yolo --shm-size 8G  anaconda3:1.0 
+docker run -it -d --name zwt_gpu --gpus all -v /home/appadmin:/opt/zwt_gpu --shm-size 8G  anaconda3:1.0
+docker run -it -d --name zgs_gpu_179 --gpus all -v /home/appadmin:/opt/zgs_gpu_179 --shm-size 8G  anaconda3:1.0
+
+docker run -it -d --name wt_gpu --gpus all -v /home/appadmin:/opt/wt_gpu --shm-size 8G   e3df54e08ddc
+
+docker run -it -d --name ysh_gpu_178 --gpus all -v /home/appadmin:/opt/ysh_gpu_178 --shm-size 8G  anaconda3:1.0
+docker run -it -d --name ws_gpu_178 --gpus all -v /home/appadmin:/opt/ws_gpu_178 --shm-size 12G  anaconda3:1.0
+docker run -it -d --name wmm_gpu_178 --gpus all -v /home/appadmin:/opt/wmm_gpu_178 --shm-size 12G  anaconda3:1.0
+docker run -it -d --name zgs_gpu_178 --gpus all -v /home/appadmin:/opt/zgs_gpu_178 --shm-size 12G  anaconda3:1.0
+docker run -it -d --name jzw_gpu_178 --gpus all -v /home/appadmin:/opt/zjw_gpu_178 --shm-size 12G  anaconda3:1.0
+
+docker run -it -d --name jzw_gpu_1 --gpus all -v /home/appadmin:/opt/zjw_gpu_1 --shm-size 16G  zl_image:1.0
+docker run -it -d --name jzw_gpu_2 --gpus all -v /home/appadmin:/opt/zjw_gpu_2 --shm-size 16G  zl_image:1.0
+
+docker run -it -d --name wt_gpu_1 --restart always --gpus all -v /home/appadmin:/opt/wt_gpu_1 --shm-size 16G  zl_image:1.0
+
+#176
+#docker run --gpus all --shm-size=32G -dit --name zl_gpu  --restart always -v /home/inspur/work:/workspace zl_image:1.0  
+#docker run --gpus all --shm-size=12g -dit --name zwt_gpu  --restart always -v /root/workspace:/workspace mmsegmentation
+#docker run --gpus all --shm-size=32G -dit --name xff_gpu_1  --restart always -v /media/opt:/program/space xff_images:0705 
+docker run --gpus all --shm-size=32G -dit --name xff_gpu_1  --restart always -v  /home/appadmin:/media/opt zl_image:1.0  
+
+conda deactivate
+#179
+sudo su 
+docker exec -it zl_gpu /bin/bash
+docker exec -it zl_gpu2 /bin/bash
+docker exec -it zl_gpu3 /bin/bash
+ docker exec -it zl_gpu4 /bin/bash     no timm/ lightning   labelme
+docker exec -it zl_gpu5 /bin/bash      paddleocr-2.6.0-11.2
+docker exec -it zl_gpu6 /bin/bash      paddleocr-2.5.2-11.2
+
+docker exec -it hmy_yolo /bin/bash
+docker exec -it zwt_gpu /bin/bash
+docker exec -it ysh_gpu_178 /bin/bash
+docker exec -it ws_gpu_178 /bin/bash
+
+#176
+docker exec -it xff_gpu_1 /bin/bash  
+docker exec -it jzw_gpu_1 /bin/bash 
+
+#178
+sudo su
+docker exec -it zl_gpu2_178 /bin/bash     /装einops
+docker exec -it zl_gpu3_178 /bin/bash     paddleocr-2.5.2-11.2
+
+
+cat BaoFengSegDataSetV42_PP.zip.0* >BaoFengSegDataSetV42_PP.zip
+cat BaoFengSegDataSetV43.zip.0* >BaoFengSegDataSetV43.zip
+
+export CUDA_VISIBLE_DEVICES=1,2,3,4
+export CUDA_VISIBLE_DEVICES=0,1,2,3,4
+
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 clip_m_trainv2.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=3 clip_m_trainv2.py
+torchrun --nnodes 1 --nproc_per_node 2 --master_port 25640  clip_m_trainv2_blackwell.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 arcface_train.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 train_multi.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=2 train_multi.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=2 --master_port=21646 train_multi.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=3 clip_m_train_one.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 --master_port=25640 clip_m_trainv2.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 --master_port=25646 clip_m_train_one.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 clip_m_trainv2_contrast.py
+
+#yolov6
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=3  --master_port=25640 1_train.py
+torchrun --nnodes 1 --nproc_per_node 2 --master_port 25640 1_train.py
+PYTHONWARNINGS="ignore::FutureWarning" torchrun --nnodes 1 --nproc_per_node 2 --master_port 25640 1_train.py
+
+rm /home/lzou/.config/Ultralytics/settings.json
+
+#ppocr
+pip install protobuf==3.20.3
+export LD_LIBRARY_PATH=/opt/zl_gpu5/zl_workplace/4_OCR/rec/cuda-11.0/lib64
+export LD_LIBRARY_PATH=/opt/zl_gpu6/zl_workplace/4_OCR/rec/cuda-11.0/lib64
+
+export LD_LIBRARY_PATH=/opt/zl_gpu3_178/zl_workplace/5_OCR/rec/cuda-11.0/lib64
+
+export LD_LIBRARY_PATH=/usr/local/cuda-11.5/lib64
+export LD_LIBRARY_PATH=/usr/local/cuda-12.6/lib64
+export NCCL_P2P_LEVEL=NVL
+pip install -v -e .
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/home/lzou/Anaconda3/nccl_2.11.4-1+cuda11.5_x86_64/lib
+fuser -v /dev/nvidia*
+conda env list
+conda activate torch2.7_cu126
+conda activate torch2.9_cu130
+
+python -m paddle.distributed.launch  --gpus '0,1,2,4,3'  --log_dir=./log/    --ips=172.31.141.51 1_train.py
+python -m paddle.distributed.launch  --gpus '0,1,2,4,3'  --log_dir=./log/    --ips=172.31.141.51 1_train_finetune.py
+python -m paddle.distributed.launch  --gpus '0,1,2'  --log_dir=./log/   --ips=172.31.141.51  1_train.py
+python -m paddle.distributed.launch  --gpus '0,1,2,3,4'  --ips=172.31.141.51 1_train.py
+python -m paddle.distributed.launch  --gpus '3,4'   run_act.py
+export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/lib/x86_64-linux-gnu
+python -m paddle.distributed.launch  --gpus '0,1,2,3,4'  --log_dir=./log/   --ips=172.31.141.51 --start_port=4080  1_train_finetune.py
+python -m paddle.distributed.launch  --gpus '0,1,2,3,4'  --log_dir=./log/   --ips=172.31.141.51 --start_port=4080  1_train.py
+python -m paddle.distributed.launch  --gpus '0,1'  --log_dir=./log/   --start_port=4080  1_train.py
+paddle2onnx --model_dir ../inference/en_PP-OCRv4_rec_export   --model_filename inference.pdmodel   --params_filename inference.pdiparams    --save_file ../inference/rec_onnx/best.onnx   --opset_version 11   --input_shape_dict="{'x':[-1,3,-1,-1]}"   --enable_onnx_checker True
+paddle2onnx --model_dir tools  --model_filename onnx/model.pdmodel  --params_filename onnx/model.pdiparams  --opset_version 11 --save_file tools/onnx/best.onnx 
+
+python setup.py install
+nvidia-smi -q -d TEMPERATURE
+
+import torch
+
+# 1. 查看 PyTorch 版本
+print("PyTorch 版本:", torch.__version__)  # 应输出 2.7.0
+# 2. 查看适配的 CUDA 版本
+print("CUDA 版本:", torch.version.cuda)  # 应输出 12.6
+# 3. 验证 CUDA 是否可用（True 表示成功）
+print("CUDA 可用:", torch.cuda.is_available())
+# 4. 查看 GPU 信息（确认识别到显卡）
+print("GPU 设备名:", torch.cuda.get_device_name(0) if torch.cuda.is_available() else "无 GPU")
+
+
+样品退回地址:深圳市光明区玉塘街道玉塘社区先能路139号怡化金融设备大厦1栋2楼  尚琪昌18823443326
+
+
+
