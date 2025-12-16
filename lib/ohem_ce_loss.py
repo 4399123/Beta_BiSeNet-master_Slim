@@ -7,6 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.functional import softmax
 
+from .lovasz_losses import lovasz_softmax
 class OhemCELoss(nn.Module):
 
     def __init__(self, thresh, lb_ignore=255):
@@ -312,6 +313,24 @@ class FocalTverskyWithOhemCELoss(nn.Module):
         gdiceloss = self.ft_loss(preds, targets)
         return ohemloss + gdiceloss
 
+
+
+class OhemLovaszLoss(nn.Module):
+    def __init__(self, thresh=0.7, lb_ignore=255, ohem_weight=1.5, lovasz_weight=1.0):
+        super().__init__()
+        self.ohem = OhemCELoss(thresh=thresh, lb_ignore=lb_ignore)
+        self.ohem_weight = ohem_weight
+        self.lovasz_weight = lovasz_weight
+
+    def forward(self, preds, targets):
+        ohem_loss = self.ohem(preds, targets)
+        # 注意：Lovász 需要 softmax 输入
+        lovasz_loss = lovasz_softmax(
+            F.softmax(preds, dim=1),
+            targets,
+            ignore=255
+        )
+        return self.ohem_weight * ohem_loss + self.lovasz_weight * lovasz_loss
 
 
 if __name__ == '__main__':

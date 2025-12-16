@@ -23,7 +23,7 @@ from lib.models import model_factory
 from configs import set_cfg_from_file
 from lib.data import get_data_loader
 from evaluate import eval_model
-from lib.ohem_ce_loss import OhemCELoss,FocalLoss,PolyFocalLoss,IoULoss,DiceLoss
+from lib.ohem_ce_loss import OhemCELoss,FocalLoss,PolyFocalLoss,IoULoss,DiceLoss,OhemLovaszLoss
 from lib.ohem_ce_loss import DiceWithOhemCELoss,DiceWithFocalLoss,DiceBCELoss,OhemWithIoULoss,LogCoshDiceLossWithOhemCELoss
 from lib.lr_scheduler import WarmupPolyLrScheduler
 from lib.meters import TimeMeter, AvgMeter
@@ -48,7 +48,7 @@ printlabels=['background','QPZZ','MDBD','MNYW','WW','LMPS','BMQQ','LMHH','KTAK']
 def parse_args():
     parse = argparse.ArgumentParser()
     parse.add_argument('--config', dest='config', type=str,
-            default='../configs/pidnet_s_blueface.py',)
+            default='../configs/bisenetv1_blueface_hgnetv2_b0.py',)
     parse.add_argument('--finetune-from', type=str, default=None,)
     return parse.parse_args()
 
@@ -69,7 +69,7 @@ def set_model(lb_ignore=255):
     net.cuda()
     net.train()
 
-    loss_opt=0
+    loss_opt=6
 
     criteria_pre=0
     criteria_aux=0
@@ -91,6 +91,9 @@ def set_model(lb_ignore=255):
     elif (loss_opt ==5):
         criteria_pre = LogCoshDiceLossWithOhemCELoss()
         criteria_aux = [LogCoshDiceLossWithOhemCELoss() for _ in range(cfg.num_aux_heads)]
+    elif (loss_opt ==6):
+        criteria_pre = OhemLovaszLoss()
+        criteria_aux = [OhemLovaszLoss() for _ in range(cfg.num_aux_heads)]
     else:
         print('no such loss !!!')
 

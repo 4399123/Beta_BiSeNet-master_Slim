@@ -53,7 +53,7 @@ def parse_args():
     # parse.add_argument('--config', dest='config', type=str,
     #         default='../configs/bisenetv1_blueface_caformer_s36.py',)
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/fastefficientbisenet_blueface_convnext_tiny_dinov3.py', )
+                       default='../configs/fastefficientbisenet_blueface_csatv2.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
     return parse.parse_args()

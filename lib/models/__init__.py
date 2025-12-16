@@ -74,6 +74,7 @@ from .fastefficientbisenet_convnext_tiny_dinov3  import FastEfficientBiSeNet_Con
 from .fastefficientbisenet_fasternet_t2  import FastEfficientBiSeNet_FasterNet_T2
 from .fastefficientbisenet_mambaout_femto  import FastEfficientBiSeNet_MambaOut_Femto
 from .fastefficientbisenet_fasternet_t0  import FastEfficientBiSeNet_FasterNet_T0
+from .fastefficientbisenet_csatv2  import FastEfficientBiSeNet_CSATV2
 
 #fastefficientformerseg
 from .fastefficientformerseg_efficientnetv2_b3 import FastEfficientFormerSeg_EfficientNetV2_B3
@@ -140,4 +141,5 @@ model_factory = {
     'fastefficientbisenet_mambaout_femto': FastEfficientBiSeNet_MambaOut_Femto,
     'fastefficientbisenet_fasternet_t0': FastEfficientBiSeNet_FasterNet_T0,
     'fastefficientformerseg_efficientnetv2_b3': FastEfficientFormerSeg_EfficientNetV2_B3,
+    'fastefficientbisenet_csatv2': FastEfficientBiSeNet_CSATV2,
 }

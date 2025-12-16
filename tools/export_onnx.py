@@ -16,9 +16,9 @@ torch.set_grad_enabled(False)
 
 parse = argparse.ArgumentParser()
 parse.add_argument('--config', dest='config', type=str,
-                   default='../configs/fastefficientbisenet_blueface_fasternet_t2.py', )
+                   default='../configs/fastefficientformerseg_blueface_efficientnetv2_b3.py', )
 parse.add_argument('--weight-path', dest='weight_pth', type=str,
-                   default='../pt/fastefficientbisenet_fasternet_t2.pt')
+                   default='../pt/fastefficientformerseg_efficientnetv2_b3.pt')
 parse.add_argument('--outpath', dest='out_pth', type=str,
                    default='./onnx/best.onnx')
 parse.add_argument('--ousmitpath', dest='outsmi_pth', type=str,
