@@ -333,6 +333,24 @@ class OhemLovaszLoss(nn.Module):
         return self.ohem_weight * ohem_loss + self.lovasz_weight * lovasz_loss
 
 
+class LogCoshDiceOhemLovaszLoss(nn.Module):
+    def __init__(self, thresh=0.7, lb_ignore=255, ohem_weight=1.5, lovasz_weight=1.0):
+        super().__init__()
+        self.ohem = LogCoshDiceLossWithOhemCELoss()
+        self.ohem_weight = ohem_weight
+        self.lovasz_weight = lovasz_weight
+
+    def forward(self, preds, targets):
+        ohem_loss = self.ohem(preds, targets)
+        # 注意：Lovász 需要 softmax 输入
+        lovasz_loss = lovasz_softmax(
+            F.softmax(preds, dim=1),
+            targets,
+            ignore=255
+        )
+        return self.ohem_weight * ohem_loss + self.lovasz_weight * lovasz_loss
+
+
 if __name__ == '__main__':
     pass
 

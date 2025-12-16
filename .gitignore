@@ -3,3 +3,5 @@ lib/premodels/
 tools/onnx/
 timm_bak/timm107/
 timm_bak/timm1015/
+tools/res/
+tools/runs/

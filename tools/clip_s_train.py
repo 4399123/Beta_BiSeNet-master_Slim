@@ -23,7 +23,7 @@ from lib.models import model_factory
 from configs import set_cfg_from_file
 from lib.data import get_data_loader
 from evaluate import eval_model
-from lib.ohem_ce_loss import OhemCELoss,FocalLoss,PolyFocalLoss,IoULoss,DiceLoss,OhemLovaszLoss
+from lib.ohem_ce_loss import OhemCELoss,FocalLoss,PolyFocalLoss,IoULoss,DiceLoss,OhemLovaszLoss,LogCoshDiceOhemLovaszLoss
 from lib.ohem_ce_loss import DiceWithOhemCELoss,DiceWithFocalLoss,DiceBCELoss,OhemWithIoULoss,LogCoshDiceLossWithOhemCELoss
 from lib.lr_scheduler import WarmupPolyLrScheduler
 from lib.meters import TimeMeter, AvgMeter
@@ -69,7 +69,7 @@ def set_model(lb_ignore=255):
     net.cuda()
     net.train()
 
-    loss_opt=6
+    loss_opt=7
 
     criteria_pre=0
     criteria_aux=0
@@ -94,6 +94,9 @@ def set_model(lb_ignore=255):
     elif (loss_opt ==6):
         criteria_pre = OhemLovaszLoss()
         criteria_aux = [OhemLovaszLoss() for _ in range(cfg.num_aux_heads)]
+    elif (loss_opt ==7):
+        criteria_pre = LogCoshDiceOhemLovaszLoss()
+        criteria_aux = [LogCoshDiceOhemLovaszLoss() for _ in range(cfg.num_aux_heads)]
     else:
         print('no such loss !!!')
 

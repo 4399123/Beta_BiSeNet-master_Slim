@@ -23,7 +23,7 @@ from lib.models import model_factory
 from configs import set_cfg_from_file
 from lib.data import get_data_loader
 from evaluate import eval_model
-from lib.ohem_ce_loss import OhemCELoss, FocalLoss, PolyFocalLoss, IoULoss, DiceLoss
+from lib.ohem_ce_loss import OhemCELoss, FocalLoss, PolyFocalLoss, IoULoss, DiceLoss,LogCoshDiceOhemLovaszLoss
 from lib.ohem_ce_loss import DiceWithOhemCELoss, DiceWithFocalLoss, DiceBCELoss, OhemWithIoULoss, OhemWithFocalLoss, \
     GDiceWithOhemCELoss, LogCoshDiceLossWithOhemCELoss, FocalTverskyWithOhemCELoss
 from lib.lr_scheduler import WarmupPolyLrScheduler
@@ -53,7 +53,7 @@ def parse_args():
     # parse.add_argument('--config', dest='config', type=str,
     #         default='../configs/bisenetv1_blueface_caformer_s36.py',)
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/fastefficientbisenet_blueface_csatv2.py', )
+                       default='../configs/fastefficientbisenet_blueface_efficientnetv2_b3.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
     return parse.parse_args()
@@ -106,6 +106,9 @@ def set_model(lb_ignore=255):
     elif (loss_opt == 7):
         criteria_pre = LogCoshDiceLossWithOhemCELoss()
         criteria_aux = [LogCoshDiceLossWithOhemCELoss() for _ in range(cfg.num_aux_heads)]
+    elif (loss_opt == 8):
+        criteria_pre = LogCoshDiceOhemLovaszLoss()
+        criteria_aux = [LogCoshDiceOhemLovaszLoss() for _ in range(cfg.num_aux_heads)]
     else:
         print('no such loss !!!')
 
