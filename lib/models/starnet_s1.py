@@ -77,7 +77,7 @@ def load_checkpoint(
         checkpoint_path: str,
         use_ema: bool = True,
         device: Union[str, torch.device] = 'cpu',
-        strict: bool = True,
+        strict: bool = False,
         remap: bool = True,
         filter_fn: Optional[Callable] = None,
 ):
@@ -97,18 +97,15 @@ def load_checkpoint(
     incompatible_keys = model.load_state_dict(state_dict, strict=strict)
     return incompatible_keys
 
-
-class RepGhostNet_200(nn.Module):
+class SatrNet_S1(nn.Module):
     def __init__(self):
-        super(RepGhostNet_200, self).__init__()
-        self.out_indices = [2,3,4]
-        self.selected_feature_extractor = timm.create_model('repghostnet_200.in1k', features_only=True, out_indices=self.out_indices,pretrained=False)
-
+        super(SatrNet_S1, self).__init__()
+        self.out_indices = [1, 2,3]
+        self.selected_feature_extractor = timm.create_model('starnet_s1.in1k', features_only=True, out_indices=self.out_indices,pretrained=False)
         try:
-            load_checkpoint(self.selected_feature_extractor, '../lib/premodels/repghostnet_200.pth')
+            load_checkpoint(self.selected_feature_extractor, '../lib/premodels/starnet_s1.pth')
         except:
-
-            load_checkpoint(self.selected_feature_extractor, '../premodels/repghostnet_200.pth')
+            load_checkpoint(self.selected_feature_extractor, '../premodels/starnet_s1.pth')
 
     def forward(self, x):
         x=self.selected_feature_extractor(x)
@@ -130,7 +127,7 @@ class RepGhostNet_200(nn.Module):
 
 
 if __name__ == "__main__":
-    net = RepGhostNet_200()
+    net = SatrNet_S1()
     x = torch.randn(2, 3, 224, 224)
     out = net(x)
     print(out[0].size())

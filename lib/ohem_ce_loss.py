@@ -184,9 +184,6 @@ class LogCoshDiceLossWithOhemCELoss(nn.Module):
         diceloss = self.dice_loss(preds, targets)
         return ohemloss + 3*diceloss
 
-
-
-
 class DiceWithOhemCELoss(nn.Module):
     def __init__(self):
         super(DiceWithOhemCELoss, self).__init__()

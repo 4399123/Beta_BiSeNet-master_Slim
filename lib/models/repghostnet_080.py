@@ -103,8 +103,11 @@ class RepGhostNet_080(nn.Module):
         self.out_indices = [2,3,4]
         self.selected_feature_extractor = timm.create_model('repghostnet_080.in1k', features_only=True, out_indices=self.out_indices,pretrained=False)
 
-        load_checkpoint(self.selected_feature_extractor, '../lib/premodels/repghostnet_080.pth')
-        # load_checkpoint(self.selected_feature_extractor, '../premodels/repghostnet_080.pth')
+        try:
+            load_checkpoint(self.selected_feature_extractor, '../lib/premodels/repghostnet_080.pth')
+        except:
+
+            load_checkpoint(self.selected_feature_extractor, '../premodels/repghostnet_080.pth')
 
     def forward(self, x):
         x=self.selected_feature_extractor(x)

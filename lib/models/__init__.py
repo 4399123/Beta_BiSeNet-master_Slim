@@ -75,6 +75,11 @@ from .fastefficientbisenet_fasternet_t2  import FastEfficientBiSeNet_FasterNet_T
 from .fastefficientbisenet_mambaout_femto  import FastEfficientBiSeNet_MambaOut_Femto
 from .fastefficientbisenet_fasternet_t0  import FastEfficientBiSeNet_FasterNet_T0
 from .fastefficientbisenet_csatv2  import FastEfficientBiSeNet_CSATV2
+from .fastefficientbisenet_starnet_s4  import FastEfficientBiSeNet_SatrNet_S4
+from .fastefficientbisenet_starnet_s1  import FastEfficientBiSeNet_SatrNet_S1
+from .fastefficientbisenet_repvit_m1_1  import FastEfficientBiSeNet_RepVit_M1_1
+from .fastefficientbisenet_repghostnet_200  import FastEfficientBiSeNet_RepGhostNet_200
+from .fastefficientbisenet_repghostnet_080  import FastEfficientBiSeNet_RepGhostNet_080
 
 #fastefficientformerseg
 from .fastefficientformerseg_efficientnetv2_b3 import FastEfficientFormerSeg_EfficientNetV2_B3
@@ -142,4 +147,9 @@ model_factory = {
     'fastefficientbisenet_fasternet_t0': FastEfficientBiSeNet_FasterNet_T0,
     'fastefficientformerseg_efficientnetv2_b3': FastEfficientFormerSeg_EfficientNetV2_B3,
     'fastefficientbisenet_csatv2': FastEfficientBiSeNet_CSATV2,
+    'fastefficientbisenet_starnet_s4': FastEfficientBiSeNet_SatrNet_S4,
+    'fastefficientbisenet_starnet_s1': FastEfficientBiSeNet_SatrNet_S1,
+    'fastefficientbisenet_repvit_m1_1': FastEfficientBiSeNet_RepVit_M1_1,
+    'fastefficientbisenet_repghostnet_200': FastEfficientBiSeNet_RepGhostNet_200,
+    'fastefficientbisenet_repghostnet_080': FastEfficientBiSeNet_RepGhostNet_080,
 }
