@@ -282,6 +282,7 @@ class SHViT(nn.Module):
             Conv2dNorm(stem_chs // 2, stem_chs, 3, 2, 1)
         )
 
+
         # Build SHViT blocks
         stages = []
         prev_chs = stem_chs
@@ -394,6 +395,7 @@ class SHViT(nn.Module):
         return take_indices
 
     def forward_features(self, x: torch.Tensor) -> torch.Tensor:
+
         x = self.patch_embed(x)
         x = self.stages(x)
         return x

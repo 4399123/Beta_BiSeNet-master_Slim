@@ -16,9 +16,9 @@ torch.set_grad_enabled(False)
 
 parse = argparse.ArgumentParser()
 parse.add_argument('--config', dest='config', type=str,
-                   default='../configs/fastefficientbisenet_blueface_repvit_m1_1.py', )
+                   default='../configs/fastefficientbisenet_blueface_shvit_s1.py', )
 parse.add_argument('--weight-path', dest='weight_pth', type=str,
-                   default='../pt/fastefficientbisenet_repvit_m1_1.pt')
+                   default='../pt/fastefficientbisenet_shvit_s1.pt')
 parse.add_argument('--outpath', dest='out_pth', type=str,
                    default='./onnx/best.onnx')
 parse.add_argument('--ousmitpath', dest='outsmi_pth', type=str,
@@ -34,11 +34,13 @@ if cfg.use_sync_bn: cfg.use_sync_bn = False
 net = model_factory[cfg.model_type](cfg.n_cats, aux_mode=args.aux_mode,use_fp16=False)
 net.load_state_dict(torch.load(args.weight_pth, map_location='cpu'), strict=False)
 net.eval()
-# replace_batchnorm(net)
+
+replace_batchnorm(net)
 reparameterize_model(net)
 
+
 #  dummy_input = torch.randn(1, 3, *cfg.crop_size)
-dummy_input = torch.randn(1, 3, 512, 512)
+dummy_input = torch.randn(1, 3, 960, 960)
 # input_name = ['input']
 # output_name = ['eval',]
 input_name = 'input'

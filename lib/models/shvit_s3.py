@@ -77,7 +77,7 @@ def load_checkpoint(
         checkpoint_path: str,
         use_ema: bool = True,
         device: Union[str, torch.device] = 'cpu',
-        strict: bool = True,
+        strict: bool = False,
         remap: bool = True,
         filter_fn: Optional[Callable] = None,
 ):
@@ -97,22 +97,22 @@ def load_checkpoint(
     incompatible_keys = model.load_state_dict(state_dict, strict=strict)
     return incompatible_keys
 
-
-class IncetionNeXt_Tiny(nn.Module):
+class ShVit_S3(nn.Module):
     def __init__(self):
-        super(IncetionNeXt_Tiny, self).__init__()
-        self.out_indices = [2,3]
-        self.selected_feature_extractor = timm.create_model('inception_next_tiny.sail_in1k', features_only=True, out_indices=self.out_indices,pretrained=False)
+        super(ShVit_S3, self).__init__()
+        self.out_indices = [0,1, 2]
+        self.selected_feature_extractor = timm.create_model('shvit_s3.in1k', features_only=True, out_indices=self.out_indices,pretrained=False)
         try:
-            load_checkpoint(self.selected_feature_extractor, '../lib/premodels/inceptionnext_tiny.pth')
+            load_checkpoint(self.selected_feature_extractor, '../lib/premodels/shvit_s3.pth')
         except:
-            load_checkpoint(self.selected_feature_extractor, '../premodels/inceptionnext_tiny.pth')
+            load_checkpoint(self.selected_feature_extractor, '../premodels/shvit_s3.pth')
 
     def forward(self, x):
         x=self.selected_feature_extractor(x)
-        feat16 = x[0] # 1/16
-        feat32 = x[1] # 1/32
-        return  feat16, feat32
+        feat8 =x[0] # 1/16
+        feat16 = x[1] # 1/32
+        feat32 = x[2] # 1/64
+        return feat8, feat16, feat32
 
     def get_params(self):
         wd_params, nowd_params = [], []
@@ -127,8 +127,8 @@ class IncetionNeXt_Tiny(nn.Module):
 
 
 if __name__ == "__main__":
-    net = IncetionNeXt_Tiny()
-    x = torch.randn(2, 3, 512, 512)
+    net = ShVit_S3()
+    x = torch.randn(2, 3, 224, 224)
     out = net(x)
     print(out[0].size())
     print(out[1].size())

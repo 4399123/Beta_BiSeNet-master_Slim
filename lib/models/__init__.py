@@ -80,6 +80,9 @@ from .fastefficientbisenet_starnet_s1  import FastEfficientBiSeNet_SatrNet_S1
 from .fastefficientbisenet_repvit_m1_1  import FastEfficientBiSeNet_RepVit_M1_1
 from .fastefficientbisenet_repghostnet_200  import FastEfficientBiSeNet_RepGhostNet_200
 from .fastefficientbisenet_repghostnet_080  import FastEfficientBiSeNet_RepGhostNet_080
+from .fastefficientbisenet_inceptionnext_atto  import FastEfficientBiSeNet_IncetionNeXt_Atto
+from .fastefficientbisenet_shvit_s1  import FastEfficientBiSeNet_SHViT_S1
+from .fastefficientbisenet_shvit_s3  import FastEfficientBiSeNet_SHViT_S3
 
 #fastefficientformerseg
 from .fastefficientformerseg_efficientnetv2_b3 import FastEfficientFormerSeg_EfficientNetV2_B3
@@ -152,4 +155,6 @@ model_factory = {
     'fastefficientbisenet_repvit_m1_1': FastEfficientBiSeNet_RepVit_M1_1,
     'fastefficientbisenet_repghostnet_200': FastEfficientBiSeNet_RepGhostNet_200,
     'fastefficientbisenet_repghostnet_080': FastEfficientBiSeNet_RepGhostNet_080,
+    'fastefficientbisenet_inceptionnext_atto': FastEfficientBiSeNet_IncetionNeXt_Atto,
+    'fastefficientbisenet_shvit_s1': FastEfficientBiSeNet_SHViT_S1,
 }

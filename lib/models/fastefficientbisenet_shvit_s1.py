@@ -3,7 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import BatchNorm2d
 from torch.cuda.amp import autocast
-from .repghostnet_080 import RepGhostNet_080
+from .shvit_s1 import ShVit_S1
 
 
 
@@ -22,35 +22,30 @@ class ConvBNReLU(nn.Module):
 
 
 class TRT_FixedAvgPool2d(nn.Module):
-    """
-    TensorRT 友好的静态池化层。
-    初始化时根据 (input_size, output_size) 计算固定的 kernel/stride。
-    """
-
     def __init__(self, input_size, output_size):
         super().__init__()
-        self.output_size = output_size
-        self.input_size = input_size
+        if isinstance(output_size, int):
+            output_size = (output_size, output_size)
+        if isinstance(input_size, int):
+            input_size = (input_size, input_size)
 
-        # 1. Global Average Pooling (1x1)
-        if output_size == (1, 1) or output_size == 1:
-            self.is_global = True
+        self.output_size = output_size
+        self.is_global = output_size == (1, 1)
+
+        if self.is_global:
             self.pool = None
         else:
-            self.is_global = False
-            # 2. 普通尺寸，手动计算 Kernel 和 Stride
-            if isinstance(output_size, int):
-                output_size = (output_size, output_size)
-            if isinstance(input_size, int):
-                input_size = (input_size, input_size)
+            # 【修正点】：增加 max(1, ...) 保护，防止 stride 为 0
+            stride_h = max(1, input_size[0] // output_size[0])
+            stride_w = max(1, input_size[1] // output_size[1])
 
-            # 计算逻辑：Stride = Input // Output
-            stride_h = input_size[0] // output_size[0]
-            stride_w = input_size[1] // output_size[1]
-
-            # Kernel = Input - (Output - 1) * Stride
+            # 【修正点】：如果输入比输出还小，kernel 直接取输入尺寸（退化为全局池化）
             kernel_h = input_size[0] - (output_size[0] - 1) * stride_h
             kernel_w = input_size[1] - (output_size[1] - 1) * stride_w
+
+            # 再次保护 kernel 必须大于 0
+            kernel_h = max(1, kernel_h)
+            kernel_w = max(1, kernel_w)
 
             self.pool = nn.AvgPool2d(
                 kernel_size=(kernel_h, kernel_w),
@@ -59,10 +54,9 @@ class TRT_FixedAvgPool2d(nn.Module):
             )
 
     def forward(self, x):
-        if self.is_global:
+        if self.is_global or self.pool is None:
             return x.mean(dim=(2, 3), keepdim=True)
-        else:
-            return self.pool(x)
+        return self.pool(x)
 
 
 class SPPM_TRT(nn.Module):
@@ -161,88 +155,76 @@ class SegmentationHead(nn.Module):
         return x
 
 
-class FastEfficientBiSeNet_RepGhostNet_080(nn.Module):
+class FastEfficientBiSeNet_SHViT_S1(nn.Module):
     def __init__(self, n_classes, aux_mode='train', use_fp16=False, img_size=(512, 512)):
-        """
-        img_size: 用于计算 SPPM 静态池化参数，务必与实际输入一致。
-        """
-        super(FastEfficientBiSeNet_RepGhostNet_080, self).__init__()
+        super(FastEfficientBiSeNet_SHViT_S1, self).__init__()
         self.use_fp16 = use_fp16
         self.aux_mode = aux_mode
         self.img_size = img_size
 
         # 1. 骨干网络
-        self.backbone = RepGhostNet_080()
+        self.backbone = ShVit_S1()
 
-        # 通道定义 (需根据实际 Backbone 输出调整)
-        self.c3_chan = 32  # Stride 8
-        self.c4_chan = 64  # Stride 16
-        self.c5_chan = 128  # Stride 32
+        # 【关键修改 1】：确认 SHViT 的通道数与下采样倍率
+        # SHViT-S1 典型的 Stage 输出通道 (请根据你具体的 shvit_s1.py 确认)
+        # 假设输出为: 1/8(C3), 1/16(C4), 1/32(C5), 1/64(C6)
+        # 这里我们选取最后三层进行融合，或者包含 C6
+        self.c_chans = [128, 224, 320] # 对应 1/16, 1/32, 1/64
 
-        # 投影层
-        self.proj_c5 = ConvBNReLU(self.c5_chan, 128, ks=1, padding=0)
-        self.proj_c4 = ConvBNReLU(self.c4_chan, 128, ks=1, padding=0)
-        self.proj_c3 = ConvBNReLU(self.c3_chan, 128, ks=1, padding=0)
+        # 投影层：统一转换到 128 通道
+        self.proj_c6 = ConvBNReLU(320, 128, ks=1, padding=0) # 1/64
+        self.proj_c5 = ConvBNReLU(224, 128, ks=1, padding=0) # 1/32
+        self.proj_c4 = ConvBNReLU(128, 128, ks=1, padding=0) # 1/16
 
-        # 2. SPPM (静态化)
-        # 计算 SPPM 输入特征图尺寸 (Backbone Stride=32)
-        sppm_feat_h = img_size[0] // 32
-        sppm_feat_w = img_size[1] // 32
-
+        # 【关键修改 2】：针对 1/64 的 SPPM
+        # 因为 SHViT 最大下采样是 64，SPPM 应该放在最深层
+        sppm_feat_h = img_size[0] // 64
+        sppm_feat_w = img_size[1] // 64
         self.sppm = SPPM_TRT(in_channels=128, out_channels=128,
                              input_feat_shape=(sppm_feat_h, sppm_feat_w))
 
-        # 3. 融合模块
-        self.fuse_context = UAFM(high_chan=128, low_chan=128, out_chan=128)
-        self.fuse_final = UAFM(high_chan=128, low_chan=128, out_chan=128)
+        # 3. 融合模块 (UAFM 逐级融合)
+        self.fuse_c6_c5 = UAFM(high_chan=128, low_chan=128, out_chan=128)
+        self.fuse_c5_c4 = UAFM(high_chan=128, low_chan=128, out_chan=128)
 
-        # 4. 输出头 (Scale factor = 8, 还原回原图)
-        self.head = SegmentationHead(128, n_classes, scale_factor=8)
+        # 【关键修改 3】：输出头
+        # 最后的融合特征在 1/16 尺度，所以还原原图需要 scale_factor=16
+        self.head = SegmentationHead(128, n_classes, scale_factor=16)
 
-        # 5. 辅助头
+        # 4. 辅助头 (对应调整缩放倍率)
         if self.aux_mode == 'train':
-            self.aux_head_c4 = SegmentationHead(128, n_classes, scale_factor=16)
             self.aux_head_c5 = SegmentationHead(128, n_classes, scale_factor=32)
+            self.aux_head_c6 = SegmentationHead(128, n_classes, scale_factor=64)
 
     def forward(self, x):
         with autocast(enabled=self.use_fp16):
-            # 获取输入尺寸，仅用于校验或备用，不再用于动态 Resize
-            H, W = x.size()[2:]
+            # 获取 Backbone 输出 (假设返回四层)
+            # feat8(1/8), feat16(1/16), feat32(1/32), feat64(1/64)
+            feat16, feat32, feat64 = self.backbone(x)
 
-            # Encoder
-            feat8, feat16, feat32 = self.backbone(x)
+            # 投影
+            c6 = self.proj_c6(feat64) # 1/64
+            c5 = self.proj_c5(feat32) # 1/32
+            c4 = self.proj_c4(feat16) # 1/16
 
-            # Projections
-            c5 = self.proj_c5(feat32)
-            c4 = self.proj_c4(feat16)
-            c3 = self.proj_c3(feat8)
+            # 语义增强 (SPPM 处理最深层)
+            c6_sppm = self.sppm(c6)
 
-            # SPPM
-            c5_sppm = self.sppm(c5)
+            # 逐级融合
+            feat_fuse_1 = self.fuse_c6_c5(c6_sppm, c5) # (1/64, 1/32) -> 1/32
+            feat_final = self.fuse_c5_c4(feat_fuse_1, c4) # (1/32, 1/16) -> 1/16
 
-            # Context Fusion
-            feat_context = self.fuse_context(c5_sppm, c4)
-
-            # Spatial Fusion
-            feat_final = self.fuse_final(feat_context, c3)
-
-            # Output Head
-            # 直接信任 Head 内部的 scale_factor=8 能还原回 (H, W)
-            # 只要 H, W 是 32 的倍数，这里一定是对齐的
+            # 主输出
             logits = self.head(feat_final)
 
             if self.aux_mode == 'train':
-                # 同理，信任 scale_factor 16 和 32
-                aux_out1 = self.aux_head_c4(c4)
-                aux_out2 = self.aux_head_c5(c5_sppm)
+                aux_out1 = self.aux_head_c5(c5)
+                aux_out2 = self.aux_head_c6(c6_sppm)
                 return logits, aux_out1, aux_out2
-
             elif self.aux_mode == 'eval':
                 return logits,
-
             elif self.aux_mode == 'pred':
-                pred = torch.argmax(logits, dim=1)
-                return  pred.float()
+                return torch.argmax(logits, dim=1).float()
             else:
                 raise NotImplementedError
 
@@ -255,7 +237,7 @@ if __name__ == "__main__":
 
     try:
         print(f"Initializing model with image size: {img_height}x{img_width}...")
-        net = FastEfficientBiSeNet_RepGhostNet_080(n_classes=n_classes, aux_mode='train', img_size=(img_height, img_width))
+        net = FastEfficientBiSeNet_SHViT_S1(n_classes=n_classes, aux_mode='train', img_size=(img_height, img_width))
         net.train()
 
         # 模拟输入

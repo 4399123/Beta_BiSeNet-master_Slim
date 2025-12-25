@@ -53,7 +53,7 @@ def parse_args():
     # parse.add_argument('--config', dest='config', type=str,
     #         default='../configs/bisenetv1_blueface_caformer_s36.py',)
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/configs/fastefficientbisenet_blueface_starnet_s4.py', )
+                       default='../configs/fastefficientbisenet_blueface_shvit_s1.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
     return parse.parse_args()
@@ -188,7 +188,7 @@ def train(writer):
                                  lr_min=5e-6,
                                  # warmup_t=0.05 * cfg.max_epochs,
                                  warmup_t=5,
-                                 warmup_lr_init=1e-7)
+                                 warmup_lr_init=1e-4)
     # lr_schdr = CosineLRScheduler(optimizer=optim,
     #                              t_initial=cfg.max_epochs//2,
     #                              cycle_limit=2,
