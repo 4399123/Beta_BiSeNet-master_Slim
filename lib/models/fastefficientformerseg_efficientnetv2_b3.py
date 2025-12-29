@@ -1,211 +1,346 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.nn import BatchNorm2d
-from torch.cuda.amp import autocast
 from .efficientnetv2_b3 import EfficientNetV2_B3
 
-class TRT_FixedAvgPool2d(nn.Module):
-    """保留您的TensorRT友好池化层"""
-    def __init__(self, input_size, output_size):
+
+# ==========================================
+# 1. 基础组件 (SHViT 风格 & 动态 Shape 优化)
+# ==========================================
+
+class Conv2dNorm(nn.Sequential):
+    """
+    基础卷积单元：Conv + BN
+    """
+
+    def __init__(
+            self,
+            in_channels: int,
+            out_channels: int,
+            kernel_size: int = 1,
+            stride: int = 1,
+            padding: int = 0,
+            groups: int = 1,
+            bn_weight_init: int = 1,
+            **kwargs,
+    ):
         super().__init__()
-        self.output_size = output_size
-        self.input_size = input_size
-        if output_size == (1, 1) or output_size == 1:
-            self.is_global = True
-            self.pool = None
-        else:
-            self.is_global = False
-            if isinstance(output_size, int):
-                output_size = (output_size, output_size)
-            if isinstance(input_size, int):
-                input_size = (input_size, input_size)
-            stride_h = input_size[0] // output_size[0]
-            stride_w = input_size[1] // output_size[1]
-            kernel_h = input_size[0] - (output_size[0] - 1) * stride_h
-            kernel_w = input_size[1] - (output_size[1] - 1) * stride_w
-            self.pool = nn.AvgPool2d(kernel_size=(kernel_h, kernel_w), stride=(stride_h, stride_w), padding=0)
+        self.add_module('c', nn.Conv2d(
+            in_channels, out_channels, kernel_size, stride, padding, groups=groups, bias=False, **kwargs))
+        self.add_module('bn', nn.BatchNorm2d(out_channels))
+
+        nn.init.constant_(self.bn.weight, bn_weight_init)
+        nn.init.constant_(self.bn.bias, 0)
+
+    @torch.no_grad()
+    def fuse(self) -> nn.Conv2d:
+        """融合 BN 到 Conv"""
+        c, bn = self._modules.values()
+        w = bn.weight / (bn.running_var + bn.eps) ** 0.5
+        w = c.weight * w[:, None, None, None]
+        b = bn.bias - bn.running_mean * bn.weight / (bn.running_var + bn.eps) ** 0.5
+
+        m = nn.Conv2d(
+            in_channels=c.in_channels,
+            out_channels=c.out_channels,
+            kernel_size=c.kernel_size,
+            stride=c.stride,
+            padding=c.padding,
+            dilation=c.dilation,
+            groups=c.groups,
+            device=c.weight.device,
+            dtype=c.weight.dtype,
+        )
+        m.weight.data.copy_(w)
+        m.bias.data.copy_(b)
+        return m
+
+
+class PolyRepConv(nn.Module):
+    """
+    多分支重参数化卷积 (Poly-Rep-Conv)
+    """
+
+    def __init__(self, in_channels, out_channels, stride=1, groups=1):
+        super(PolyRepConv, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.stride = stride
+        self.groups = groups
+
+        # 1. 3x3 分支
+        self.branch_3x3 = Conv2dNorm(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, groups=groups)
+
+        # 2. 1x1 分支
+        self.branch_1x1 = Conv2dNorm(in_channels, out_channels, kernel_size=1, stride=stride, padding=0, groups=groups)
+
+        # 3. Identity 分支
+        self.use_identity = (stride == 1 and in_channels == out_channels)
+        if self.use_identity:
+            self.branch_identity = nn.BatchNorm2d(in_channels)
 
     def forward(self, x):
-        if self.is_global:
-            return x.mean(dim=(2, 3), keepdim=True)
-        else:
-            return self.pool(x)
+        out = self.branch_3x3(x) + self.branch_1x1(x)
+        if self.use_identity:
+            out += self.branch_identity(x)
+        return out
 
-class StaticResize(nn.Module):
-    """静态尺寸调整层，确保TensorRT兼容性"""
-    def __init__(self, scale_factor=None, size=None):
-        super().__init__()
-        self.scale_factor = scale_factor
-        self.size = size  # 必须为静态元组
+    @torch.no_grad()
+    def fuse(self) -> nn.Conv2d:
+        # Fuse 3x3
+        fused_3x3 = self.branch_3x3.fuse()
+        kernel_final = fused_3x3.weight
+        bias_final = fused_3x3.bias
 
-    def forward(self, x):
-        if self.scale_factor is not None:
-            size = (int(x.shape[2] * self.scale_factor), int(x.shape[3] * self.scale_factor))
-        else:
-            size = self.size
-        return F.interpolate(x, size=size, mode='bilinear', align_corners=False)
+        # Fuse 1x1 & Pad
+        fused_1x1 = self.branch_1x1.fuse()
+        kernel_1x1_pad = F.pad(fused_1x1.weight, [1, 1, 1, 1])
+        kernel_final += kernel_1x1_pad
+        bias_final += fused_1x1.bias
 
-class ECAAttention(nn.Module):
-    """轻量级ECA注意力模块，计算量极小，适合低端GPU"""
-    def __init__(self, channels, gamma=2, beta=1):
-        super().__init__()
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.conv = nn.Conv1d(1, 1, kernel_size=3, padding=1, bias=False)
-        self.sigmoid = nn.Sigmoid()
+        # Fuse Identity
+        if self.use_identity:
+            id_conv_wrapper = Conv2dNorm(self.in_channels, self.out_channels, 1, 1, 0, groups=self.groups)
+            id_conv = id_conv_wrapper.c
+            nn.init.dirac_(id_conv.weight.data)
 
-    def forward(self, x):
-        y = self.avg_pool(x)
-        y = self.conv(y.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
-        y = self.sigmoid(y)
-        return x * y
+            id_bn = id_conv_wrapper.bn
+            id_bn.weight.data.copy_(self.branch_identity.weight.data)
+            id_bn.bias.data.copy_(self.branch_identity.bias.data)
+            id_bn.running_mean.data.copy_(self.branch_identity.running_mean.data)
+            id_bn.running_var.data.copy_(self.branch_identity.running_var.data)
 
-class ConvBlock(nn.Module):
-    """基础卷积块，可选深度可分离卷积以进一步加速"""
-    def __init__(self, in_ch, out_ch, ks=3, stride=1, padding=1, use_dw=False):
-        super().__init__()
-        if use_dw:
-            self.conv = nn.Sequential(
-                nn.Conv2d(in_ch, in_ch, kernel_size=ks, stride=stride, padding=padding, groups=in_ch, bias=False),
-                nn.Conv2d(in_ch, out_ch, kernel_size=1, bias=False)
-            )
-        else:
-            self.conv = nn.Conv2d(in_ch, out_ch, kernel_size=ks, stride=stride, padding=padding, bias=False)
-        self.bn = BatchNorm2d(out_ch)
-        self.act = nn.ReLU(inplace=True)
-        self.eca = ECAAttention(out_ch)  # 轻量注意力
+            fused_id = id_conv_wrapper.fuse()
+            kernel_id_pad = F.pad(fused_id.weight, [1, 1, 1, 1])
 
-    def forward(self, x):
-        return self.eca(self.act(self.bn(self.conv(x))))
+            kernel_final += kernel_id_pad
+            bias_final += fused_id.bias
 
-class LiteFeatureFusion(nn.Module):
-    """轻量级特征融合模块，替代原UAFM，计算更高效"""
-    def __init__(self, in_ch, out_ch):
-        super().__init__()
-        self.conv_high = ConvBlock(in_ch, out_ch, ks=1, padding=0)
-        self.conv_low = ConvBlock(in_ch, out_ch, ks=1, padding=0)
-        self.fusion_conv = ConvBlock(out_ch, out_ch, ks=3, padding=1)
+        m = nn.Conv2d(
+            in_channels=self.in_channels,
+            out_channels=self.out_channels,
+            kernel_size=3,
+            stride=self.stride,
+            padding=1,
+            groups=self.groups,
+            bias=True
+        )
+        m.weight.data.copy_(kernel_final)
+        m.bias.data.copy_(bias_final)
+        return m
 
-    def forward(self, high, low):
-        # 高层特征上采样
-        high = F.interpolate(high, size=low.shape[2:], mode='bilinear', align_corners=False)
-        high = self.conv_high(high)
-        low = self.conv_low(low)
-        # 简单相加融合（比注意力更省计算）
-        fused = high + low
-        return self.fusion_conv(fused)
 
-class LightweightSPPM(nn.Module):
-    """精简版SPPM，减少分支数量，使用固定池化"""
-    def __init__(self, in_channels, out_channels, input_feat_shape):
-        super().__init__()
-        self.stages = nn.ModuleList([
-            nn.Sequential(
-                TRT_FixedAvgPool2d(input_size=input_feat_shape, output_size=1),
-                ConvBlock(in_channels, in_channels//4, ks=1, padding=0)
-            ),
-            nn.Sequential(
-                TRT_FixedAvgPool2d(input_size=input_feat_shape, output_size=(2,2)),
-                ConvBlock(in_channels, in_channels//4, ks=1, padding=0)
-            )
-        ])
-        self.conv_out = ConvBlock(in_channels + in_channels//2, out_channels, ks=1, padding=0)
+class StripPoolingDynamic(nn.Module):
+    """
+    全动态 Strip Pooling。
+    不使用 AvgPool 或 AdaptivePool，而是使用 torch.mean (ReduceMean)。
+    这在 TensorRT 中对应 ReduceMean 算子，完全支持 Dynamic Shapes，无需预设尺寸。
+    """
+
+    def __init__(self, in_channels, out_channels):
+        super(StripPoolingDynamic, self).__init__()
+
+        # 1x1 Conv 降维
+        self.conv1_1 = nn.Sequential(
+            Conv2dNorm(in_channels, out_channels, 1),
+            nn.SiLU(inplace=True)
+        )
+
+        # 处理池化后的特征
+        self.conv_h = nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=False)
+        self.conv_w = nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=False)
+
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.act = nn.SiLU(inplace=True)
 
     def forward(self, x):
-        input_size = x.shape[2:]
-        priors = [x]
-        for stage in self.stages:
-            feat = stage(x)
-            feat = F.interpolate(feat, size=input_size, mode='bilinear', align_corners=False)
-            priors.append(feat)
-        return self.conv_out(torch.cat(priors, dim=1))
+        # x: [B, C, H, W]
+        x = self.conv1_1(x)
+
+        # 1. 水平 Strip: 沿着 W 维度求平均 -> (B, C, H, 1)
+        # 替代 AvgPool2d(kernel_size=(1, W))
+        x_h = x.mean(dim=3, keepdim=True)
+
+        # 2. 垂直 Strip: 沿着 H 维度求平均 -> (B, C, 1, W)
+        # 替代 AvgPool2d(kernel_size=(H, 1))
+        x_w = x.mean(dim=2, keepdim=True)
+
+        # 3. 卷积提取特征
+        x_h = self.conv_h(x_h)
+        x_w = self.conv_w(x_w)
+
+        # 4. 扩展回原尺寸
+        # 利用 bilinear 插值，这比 expand/broadcast 在 TRT 中通常更安全，
+        # 且避免了奇怪的 view 操作。
+        target_size = x.shape[2:]
+        x_h = F.interpolate(x_h, size=target_size, mode='bilinear', align_corners=False)
+        x_w = F.interpolate(x_w, size=target_size, mode='bilinear', align_corners=False)
+
+        # 5. 融合
+        return self.act(self.bn(x + x_h + x_w))
+
+
+# ==========================================
+# 2. 核心网络 (无需 img_size)
+# ==========================================
 
 class FastEfficientFormerSeg_EfficientNetV2_B3(nn.Module):
-    def __init__(self, n_classes, aux_mode='train', use_fp16=False, img_size=(512, 512)):
-        super().__init__()
-        self.use_fp16 = use_fp16
+    def __init__(self, n_classes, aux_mode='train',use_fp16=False, *args, **kwargs):
+        """
+        移除了 img_size 参数。现在支持任意尺寸输入。
+        """
+        super(FastEfficientFormerSeg_EfficientNetV2_B3, self).__init__()
         self.aux_mode = aux_mode
-        self.img_size = img_size
 
-        # 1. 骨干网络 (保持不变)
+        # 1. Backbone
         self.backbone = EfficientNetV2_B3()
-        self.c3_chan, self.c4_chan, self.c5_chan = 56, 136, 232
 
-        # 2. 极简投影层 (减少通道数以加速)
-        self.proj_c5 = ConvBlock(self.c5_chan, 64, ks=1, padding=0)  # 从128减至64
-        self.proj_c4 = ConvBlock(self.c4_chan, 64, ks=1, padding=0)
-        self.proj_c3 = ConvBlock(self.c3_chan, 64, ks=1, padding=0)
+        # Backbone 通道 (已修正为 56, 136, 232)
+        self.c3_chan = 56  # Stride 8
+        self.c4_chan = 136  # Stride 16
+        self.c5_chan = 232  # Stride 32
 
-        # 3. 静态化多尺度融合
-        sppm_feat_h, sppm_feat_w = img_size[0] // 32, img_size[1] // 32
-        self.sppm = LightweightSPPM(64, 64, (sppm_feat_h, sppm_feat_w))
+        self.embed_dim = 128
 
-        # 4. 轻量级特征金字塔 (单路径融合)
-        self.fuse1 = LiteFeatureFusion(64, 64)  # c5_sppm + c4
-        self.fuse2 = LiteFeatureFusion(64, 64)  # result + c3
-
-        # 5. 头部网络 (简化)
-        self.head = nn.Sequential(
-            ConvBlock(64, 64, ks=3, padding=1),
-            nn.Conv2d(64, n_classes, kernel_size=1, bias=True)
+        # 2. 投影层
+        self.proj_c5 = nn.Sequential(
+            Conv2dNorm(self.c5_chan, self.embed_dim, 1),
+            nn.SiLU(inplace=True)
         )
-        self.upsample = StaticResize(scale_factor=8)  # 静态上采样
+        self.proj_c4 = nn.Sequential(
+            Conv2dNorm(self.c4_chan, self.embed_dim, 1),
+            nn.SiLU(inplace=True)
+        )
+        self.proj_c3 = nn.Sequential(
+            Conv2dNorm(self.c3_chan, self.embed_dim, 1),
+            nn.SiLU(inplace=True)
+        )
 
-        # 6. 辅助头 (仅训练时使用，更轻量)
+        # 3. Context Aggregation (Dynamic Strip Pooling)
+        # 不再需要传入 feat_size
+        self.context_agg = StripPoolingDynamic(
+            in_channels=self.embed_dim,
+            out_channels=self.embed_dim
+        )
+
+        # 4. Fusion Layer (PolyRepConv)
+        self.fuse_block = nn.Sequential(
+            PolyRepConv(self.embed_dim * 3, self.embed_dim, stride=1),
+            nn.SiLU(inplace=True),
+            nn.Dropout(0.1)
+        )
+
+        # 5. Head
+        self.head = nn.Conv2d(self.embed_dim, n_classes, kernel_size=1)
+
+        # 6. Aux Head
         if self.aux_mode == 'train':
-            self.aux_head = nn.Sequential(
-                ConvBlock(64, 32, ks=3, padding=1),
-                nn.Conv2d(32, n_classes, kernel_size=1, bias=True),
-                StaticResize(scale_factor=16)
+            self.aux_head_c4 = nn.Sequential(
+                Conv2dNorm(self.embed_dim, 64, 3, 1, 1),
+                nn.SiLU(inplace=True),
+                nn.Conv2d(64, n_classes, 1)
             )
 
     def forward(self, x):
-        with autocast(enabled=self.use_fp16):
-            # 编码器
-            feat8, feat16, feat32 = self.backbone(x)
+        input_shape = x.shape[2:]
 
-            # 投影
-            c5 = self.proj_c5(feat32)
-            c4 = self.proj_c4(feat16)
-            c3 = self.proj_c3(feat8)
+        # Encoder
+        c3, c4, c5 = self.backbone(x)
 
-            # 多尺度上下文
-            c5_context = self.sppm(c5)
+        # Projections
+        p5 = self.proj_c5(c5)
+        p4 = self.proj_c4(c4)
+        p3 = self.proj_c3(c3)
 
-            # 融合
-            feat = self.fuse1(c5_context, c4)
-            feat = self.fuse2(feat, c3)
+        # Context (Dynamic Pooling)
+        p5 = self.context_agg(p5)
 
-            # 输出
-            logits = self.head(feat)
-            logits = self.upsample(logits)  # 静态上采样到原图
+        # Upsampling (统一到 p3 的 1/8 尺寸)
+        # 动态获取当前 p3 的尺寸
+        target_size = p3.shape[2:]
+        p5_up = F.interpolate(p5, size=target_size, mode='bilinear', align_corners=False)
+        p4_up = F.interpolate(p4, size=target_size, mode='bilinear', align_corners=False)
 
-            if self.aux_mode == 'train':
-                # 使用c4作为辅助特征，减少计算
-                aux_logits = self.aux_head(c4)
-                return logits, aux_logits
-            elif self.aux_mode == 'eval':
-                return logits,
-            elif self.aux_mode == 'pred':
-                return torch.argmax(logits, dim=1).float()
-            else:
-                raise NotImplementedError
+        # Concatenate
+        feat_cat = torch.cat([p3, p4_up, p5_up], dim=1)
 
-# 测试代码
+        # Fusion
+        feat_fused = self.fuse_block(feat_cat)
+
+        # Head
+        logits = self.head(feat_fused)
+
+        # Final Upsample (8x)
+        logits = F.interpolate(logits, size=input_shape, mode='bilinear', align_corners=False)
+
+        if self.aux_mode == 'train':
+            aux_out = self.aux_head_c4(p4)
+            aux_out = F.interpolate(aux_out, size=input_shape, mode='bilinear', align_corners=False)
+            return logits, aux_out
+
+        elif self.aux_mode == 'eval':
+            return logits,
+
+        elif self.aux_mode == 'pred':
+            return torch.argmax(logits, dim=1).float()
+
+        return logits
+
+    @torch.no_grad()
+    def fuse(self):
+        """
+        递归融合入口
+        """
+
+        def fuse_children(net):
+
+            for child_name, child in net.named_children():
+                if hasattr(child, 'fuse'):
+                    fused = child.fuse()
+                    setattr(net, child_name, fused)
+                    fuse_children(fused)
+                else:
+                    fuse_children(child)
+
+        print("Starting model fusion (RepConv -> Conv2d)...")
+        fuse_children(self)
+        print("Fusion complete.")
+
+
 if __name__ == "__main__":
-    img_height, img_width = 640, 640
-    n_classes = 19
-    print(f"测试模型: {img_height}x{img_width} -> {n_classes}类")
+    # 配置
+    CLASSES = 4
 
-    net = FastEfficientFormerSeg_EfficientNetV2_B3(n_classes=n_classes, aux_mode='train', img_size=(img_height, img_width))
-    net.train()
+    # 1. 初始化 (不再需要 img_size)
+    print(f"Initializing model (Dynamic Input Size)...")
+    model = FastEfficientFormerSeg_EfficientNetV2_B3(n_classes=CLASSES, aux_mode='train')
+    model.eval()
 
-    if torch.cuda.is_available():
-        net.cuda()
-        in_ten = torch.randn(2, 3, img_height, img_width).cuda()
-    else:
-        in_ten = torch.randn(2, 3, img_height, img_width)
+    # 2. 测试不同尺寸输入 (验证动态性)
+    print("\n--- Testing Dynamic Shapes ---")
 
-    out, aux1 = net(in_ten)
-    print(f"主输出: {out.shape}, 辅助: {aux1.shape}")
-    print("模型测试通过！")
+    # 尺寸 A: 640x640
+    x1 = torch.randn(1, 3, 640, 640)
+    with torch.no_grad():
+        y1, _ = model(x1)
+    print(f"Input: 640x640 -> Output: {y1.shape}")
+
+    # 尺寸 B: 512x1024 (长宽不等)
+    x2 = torch.randn(1, 3, 512, 1024)
+    with torch.no_grad():
+        y2, _ = model(x2)
+    print(f"Input: 512x1024 -> Output: {y2.shape}")
+
+    # 3. 融合测试
+    print("\n--- Fusing Model ---")
+    model.fuse()
+
+    # 4. 融合后再次测试
+    with torch.no_grad():
+        y1_fused, _ = model(x1)
+
+    diff = (y1 - y1_fused).abs().max()
+    print(f"Fusion Difference: {diff.item():.8f}")
+
+    if diff < 1e-4:
+        print("✅ Success: Model is dynamic and fusion-ready.")

@@ -129,5 +129,7 @@ print("GPU 设备名:", torch.cuda.get_device_name(0) if torch.cuda.is_available
 
 样品退回地址:深圳市光明区玉塘街道玉塘社区先能路139号怡化金融设备大厦1栋2楼  尚琪昌18823443326
 
+FastEfficientFormerSeg_EfficientNetV2_B3
+
 
 

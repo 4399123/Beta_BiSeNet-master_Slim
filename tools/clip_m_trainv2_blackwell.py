@@ -53,7 +53,7 @@ def parse_args():
     # parse.add_argument('--config', dest='config', type=str,
     #         default='../configs/bisenetv1_blueface_caformer_s36.py',)
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/fastefficientbisenet_blueface_shvit_s1.py', )
+                       default='../configs/fastefficientbisenet_blueface_shvit_s3.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
     return parse.parse_args()
@@ -187,7 +187,7 @@ def train(writer):
                                  t_initial=cfg.max_epochs,
                                  lr_min=5e-6,
                                  # warmup_t=0.05 * cfg.max_epochs,
-                                 warmup_t=5,
+                                 warmup_t=2,
                                  warmup_lr_init=1e-4)
     # lr_schdr = CosineLRScheduler(optimizer=optim,
     #                              t_initial=cfg.max_epochs//2,
@@ -215,17 +215,12 @@ def train(writer):
             lb = torch.squeeze(lb, 1)
 
             optim.zero_grad()
+            aux_weight = 0.5 * (1 - epoch / cfg.max_epochs)
             with amp.autocast(enabled=cfg.use_fp16):
                 logits, *logits_aux = net(im)
                 loss_pre = criteria_pre(logits, lb)
                 loss_aux = [crit(lgt, lb) for crit, lgt in zip(criteria_aux, logits_aux)]
-                loss = loss_pre + 0.4 * sum(loss_aux)
-            # assert torch.isnan(loss).sum() == 0, print('1:{}'.format(loss))
-            # #########
-            # if torch.isnan(loss):
-            #     logger.info('loss is NAN')
-            #     break
-            # #########
+                loss = loss_pre + aux_weight * sum(loss_aux)
             scaler.scale(loss).backward()
             # clip
             scaler.unscale_(optim)

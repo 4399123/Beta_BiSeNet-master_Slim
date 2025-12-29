@@ -1,246 +1,232 @@
-#!/usr/bin/python
-# -*- encoding: utf-8 -*-
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-import timm
-import os
-from typing import Any, Callable, Dict, Optional, Union, Tuple
-import logging
+import numpy as np
 
-# region: 模型加载工具函数 (基本保持不变, 原始实现已相当不错)
-# -------------------------------------------------------------------
+# ==========================================
+# 0. 模拟环境 (如果你在本地运行，请保留原来的 import)
+# ==========================================
 try:
-    import safetensors.torch
-
-    _has_safetensors = True
+    from efficientnetv2_b3 import EfficientNetV2_B3
 except ImportError:
-    _has_safetensors = False
-
-_logger = logging.getLogger(__name__)
+    print("⚠️ 未找到 efficientnetv2_b3，使用 DummyBackbone 进行测试...")
 
 
-def clean_state_dict(state_dict: Dict[str, Any]) -> Dict[str, Any]:
-    cleaned_state_dict = {}
-    for k, v in state_dict.items():
-        name = k[7:] if k.startswith('module.') else k
-        cleaned_state_dict[name] = v
-    return cleaned_state_dict
+    class EfficientNetV2_B3(nn.Module):
+        def forward(self, x):
+            # 模拟 B3 的输出通道: 56, 136, 232; 下采样倍率: 8, 16, 32
+            B, _, H, W = x.shape
+            c3 = torch.randn(B, 56, H // 8, W // 8, device=x.device)
+            c4 = torch.randn(B, 136, H // 16, W // 16, device=x.device)
+            c5 = torch.randn(B, 232, H // 32, W // 32, device=x.device)
+            return c3, c4, c5
 
 
-def load_state_dict(
-        checkpoint_path: str,
-        use_ema: bool = True,
-        device: Union[str, torch.device] = 'cpu',
-) -> Dict[str, Any]:
-    if not os.path.isfile(checkpoint_path):
-        _logger.error(f"No checkpoint found at '{checkpoint_path}'")
-        raise FileNotFoundError(f"No checkpoint found at '{checkpoint_path}'")
-
-    if str(checkpoint_path).endswith(".safetensors"):
-        if not _has_safetensors:
-            raise ImportError("`pip install safetensors` is required to load .safetensors files.")
-        return safetensors.torch.load_file(checkpoint_path, device=device)
-
-    checkpoint = torch.load(checkpoint_path, map_location=device)
-
-    state_dict_key = ''
-    if isinstance(checkpoint, dict):
-        for key in ('state_dict_ema', 'model_ema', 'state_dict', 'model'):
-            if key in checkpoint:
-                state_dict_key = key
-                break
-
-    state_dict = checkpoint.get(state_dict_key, checkpoint) if state_dict_key else checkpoint
-    state_dict = clean_state_dict(state_dict)
-    _logger.info(f"Loaded '{state_dict_key or 'state_dict'}' from checkpoint '{checkpoint_path}'")
-    return state_dict
-
-
-def remap_state_dict(
-        state_dict: Dict[str, Any],
-        model: nn.Module,
-        allow_reshape: bool = True
-):
-    """
-    Remaps checkpoint by iterating over state dicts in order.
-    Warning: This is a brittle method and should be used with caution.
-    """
-    out_dict = {}
-    model_state_dict = model.state_dict()
-
-    if len(model_state_dict) != len(state_dict):
-        _logger.warning(
-            f"State dict size mismatch: model has {len(model_state_dict)} tensors, checkpoint has {len(state_dict)}. Remap may fail.")
-
-    for (ka, va), (kb, vb) in zip(model_state_dict.items(), state_dict.items()):
-        if va.numel() != vb.numel():
-            raise ValueError(
-                f"Tensor size mismatch for {ka}: model shape {va.shape} vs checkpoint shape {vb.shape}. Remap failed.")
-
-        if va.shape != vb.shape:
-            if allow_reshape:
-                _logger.warning(f"Reshaping tensor {kb} from {vb.shape} to {va.shape} for key {ka}.")
-                vb = vb.reshape(va.shape)
-            else:
-                raise ValueError(f"Tensor shape mismatch for {ka}: {va.shape} vs {kb}: {vb.shape}. Remap failed.")
-        out_dict[ka] = vb
-    return out_dict
-
-
-def load_checkpoint(
-        model: nn.Module,
-        checkpoint_path: str,
-        use_ema: bool = True,
-        device: Union[str, torch.device] = 'cpu',
-        strict: bool = True,
-        remap: bool = True,
-        filter_fn: Optional[Callable] = None,
-):
-    if os.path.splitext(checkpoint_path)[-1].lower() in ('.npz', '.npy'):
-        if hasattr(model, 'load_pretrained'):
-            model.load_pretrained(checkpoint_path)
-            return
-        else:
-            raise NotImplementedError('Model does not support loading numpy checkpoints.')
-
-    state_dict = load_state_dict(checkpoint_path, use_ema, device=device)
-
-    if remap:
-        state_dict = remap_state_dict(state_dict, model)
-    elif filter_fn:
-        state_dict = filter_fn(state_dict, model)
-
-    incompatible_keys = model.load_state_dict(state_dict, strict=strict)
-    return incompatible_keys
-
-
-# -------------------------------------------------------------------
-# endregion
-
-
-class Classifier(nn.Module):
-    """
-    A simple classifier head with global average pooling and two fully-connected layers.
-    Args:
-        in_ch (int): Number of input channels from the backbone.
-        num_classes (int): Number of output classes.
-        embedding_dim (int): The dimension of the feature embedding.
-    """
-
-    def __init__(self, in_ch: int, num_classes: int, embedding_dim: int):
+# ==========================================
+# 1. 你的原始组件 (保持不变)
+# ==========================================
+class Conv2dNorm(nn.Sequential):
+    def __init__(self, in_channels, out_channels, kernel_size=1, stride=1, padding=0, groups=1, bn_weight_init=1,
+                 **kwargs):
         super().__init__()
-        # <--- 优化点 2: 使用高效、标准的 AdaptiveAvgPool2d
-        self.pool = nn.AdaptiveAvgPool2d((1, 1))
-        self.fc1 = nn.Linear(in_ch, embedding_dim)
-        self.fc2 = nn.Linear(embedding_dim, num_classes)
-
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        Forward pass.
-        Returns:
-            A tuple containing the feature embedding and the final logits.
-        """
-        x = self.pool(x)
-        x = torch.flatten(x, 1)
-        feature = F.relu(self.fc1(x))
-        out = self.fc2(feature)
-        return feature, out
+        self.add_module('c',
+                        nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, groups=groups, bias=False,
+                                  **kwargs))
+        self.add_module('bn', nn.BatchNorm2d(out_channels))
+        nn.init.constant_(self.bn.weight, bn_weight_init)
+        nn.init.constant_(self.bn.bias, 0)
 
 
-class Net(nn.Module):
-    """
-    A network composed of a timm backbone and a custom classifier head.
-    Args:
-        model_name (str): The name of the model to load from timm.
-        num_classes (int): The number of classes for the final classifier.
-        embedding_dim (int): The dimension of the intermediate feature embedding.
-        pretrained_path (str, optional): Path to the pretrained backbone weights.
-    """
+class PolyRepConv(nn.Module):
+    def __init__(self, in_channels, out_channels, stride=1, groups=1):
+        super(PolyRepConv, self).__init__()
+        self.branch_3x3 = Conv2dNorm(in_channels, out_channels, kernel_size=3, stride=stride, padding=1, groups=groups)
+        self.branch_1x1 = Conv2dNorm(in_channels, out_channels, kernel_size=1, stride=stride, padding=0, groups=groups)
+        self.use_identity = (stride == 1 and in_channels == out_channels)
+        if self.use_identity:
+            self.branch_identity = nn.BatchNorm2d(in_channels)
 
-    def __init__(self, model_name: str, num_classes: int, embedding_dim: int = 512,
-                 pretrained_path: Optional[str] = None):
+    def forward(self, x):
+        out = self.branch_3x3(x) + self.branch_1x1(x)
+        if self.use_identity:
+            out += self.branch_identity(x)
+        return out
+
+
+class StripPoolingDynamic(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(StripPoolingDynamic, self).__init__()
+        self.conv1_1 = nn.Sequential(Conv2dNorm(in_channels, out_channels, 1), nn.SiLU(inplace=True))
+        self.conv_h = nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=False)
+        self.conv_w = nn.Conv2d(out_channels, out_channels, 3, 1, 1, bias=False)
+        self.bn = nn.BatchNorm2d(out_channels)
+        self.act = nn.SiLU(inplace=True)
+
+    def forward(self, x):
+        x = self.conv1_1(x)
+        x_h = x.mean(dim=3, keepdim=True)
+        x_w = x.mean(dim=2, keepdim=True)
+        x_h = self.conv_h(x_h)
+        x_w = self.conv_w(x_w)
+        target_size = x.shape[2:]
+        x_h = F.interpolate(x_h, size=target_size, mode='bilinear', align_corners=False)
+        x_w = F.interpolate(x_w, size=target_size, mode='bilinear', align_corners=False)
+        return self.act(self.bn(x + x_h + x_w))
+
+
+# ==========================================
+# 2. 修改后的模型类 (支持分步执行)
+# ==========================================
+class ProfilingModel(nn.Module):
+    def __init__(self, n_classes, aux_mode='eval'):
         super().__init__()
-        # 创建骨干网络，仅提取特征
-        self.backbone = timm.create_model(
-            model_name,
-            features_only=True,
-            out_indices=[-1],
-            pretrained=False  # 先设置为False，我们手动加载
+        self.aux_mode = aux_mode
+        self.backbone = EfficientNetV2_B3()
+
+        # 参数配置
+        self.c3_chan, self.c4_chan, self.c5_chan = 56, 136, 232
+        self.embed_dim = 128
+
+        # 投影层
+        self.proj_c5 = nn.Sequential(Conv2dNorm(self.c5_chan, self.embed_dim, 1), nn.SiLU(inplace=True))
+        self.proj_c4 = nn.Sequential(Conv2dNorm(self.c4_chan, self.embed_dim, 1), nn.SiLU(inplace=True))
+        self.proj_c3 = nn.Sequential(Conv2dNorm(self.c3_chan, self.embed_dim, 1), nn.SiLU(inplace=True))
+
+        self.context_agg = StripPoolingDynamic(self.embed_dim, self.embed_dim)
+
+        self.fuse_block = nn.Sequential(
+            PolyRepConv(self.embed_dim * 3, self.embed_dim, stride=1),
+            nn.SiLU(inplace=True),
+            nn.Dropout(0.1)
         )
+        self.head = nn.Conv2d(self.embed_dim, n_classes, kernel_size=1)
 
-        # <--- 优化点 1: 动态、安全地获取输入通道数
-        # 从backbone的feature_info中获取最后一层输出的通道数
-        fc_in_ch = self.backbone.feature_info[-1]['num_chs']
+    # --- 关键修改: 将 Forward 拆分为两部分 ---
 
-        # 手动加载预训练权重 (如果提供了路径)
-        if pretrained_path and os.path.exists(pretrained_path):
-            print(f"Loading pretrained weights from: {pretrained_path}")
-            load_checkpoint(self.backbone, pretrained_path)
-        else:
-            _logger.warning(
-                f"Pretrained path '{pretrained_path}' not found or not provided. Using randomly initialized backbone.")
+    def extract_features(self, x):
+        """仅运行 Backbone"""
+        return self.backbone(x)
 
-        self.classifier = Classifier(fc_in_ch, num_classes, embedding_dim)
+    def decode_head(self, features, input_shape):
+        """运行 Neck, Decoder, Head 和 Upsample"""
+        c3, c4, c5 = features
 
-    def forward(self, x: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        """
-        <--- 优化点 3: 移除 'mode' 参数，forward只负责前向传播
-        """
-        # backbone返回的是一个列表，因为out_indices=[-1]，所以我们取第一个元素
-        features_map = self.backbone(x)[0]
-        # 传递给分类头
-        feature_embedding, logits = self.classifier(features_map)
-        return feature_embedding, logits
+        # Projections
+        p5 = self.proj_c5(c5)
+        p4 = self.proj_c4(c4)
+        p3 = self.proj_c3(c3)
+
+        # Context
+        p5 = self.context_agg(p5)
+
+        # Upsampling & Fusion
+        target_size = p3.shape[2:]
+        p5_up = F.interpolate(p5, size=target_size, mode='bilinear', align_corners=False)
+        p4_up = F.interpolate(p4, size=target_size, mode='bilinear', align_corners=False)
+
+        feat_cat = torch.cat([p3, p4_up, p5_up], dim=1)
+        feat_fused = self.fuse_block(feat_cat)
+
+        # Head
+        logits = self.head(feat_fused)
+
+        # Final Upsample
+        logits = F.interpolate(logits, size=input_shape, mode='bilinear', align_corners=False)
+
+        return logits
+
+
+# ==========================================
+# 3. 性能分析器
+# ==========================================
+def run_profiling():
+    # 设置设备
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    if device.type == 'cpu':
+        print("⚠️ 警告: 正在使用 CPU 测试，时间可能不准确且无法反映生产环境性能。建议使用 GPU。")
+
+    print(f"🚀 初始化模型 (Device: {device})...")
+    model = ProfilingModel(n_classes=4).to(device)
+    model.eval()
+
+    # 输入数据 (640x640)
+    B, C, H, W = 1, 3, 640, 640
+    input_data = torch.randn(B, C, H, W).to(device)
+
+    # 参数
+    warmup_steps = 20
+    test_steps = 100
+
+    records_backbone = []
+    records_decoder = []
+
+    print(f"🔥 开始预热 ({warmup_steps} 次)...")
+    with torch.no_grad():
+        for _ in range(warmup_steps):
+            feats = model.extract_features(input_data)
+            _ = model.decode_head(feats, (H, W))
+
+    print(f"⏱️ 开始正式测试 ({test_steps} 次)...")
+
+    # 定义 CUDA 事件
+    start_event = torch.cuda.Event(enable_timing=True)
+    mid_event = torch.cuda.Event(enable_timing=True)
+    end_event = torch.cuda.Event(enable_timing=True)
+
+    for _ in range(test_steps):
+        with torch.no_grad():
+            torch.cuda.synchronize()
+            start_event.record()
+
+            # 1. 特征提取 (Backbone)
+            features = model.extract_features(input_data)
+
+            mid_event.record()
+
+            # 2. 后续操作 (Decoder + Head + Upsample)
+            _ = model.decode_head(features, (H, W))
+
+            end_event.record()
+            torch.cuda.synchronize()  # 等待 GPU 完成
+
+            # 记录时间 (ms)
+            records_backbone.append(start_event.elapsed_time(mid_event))
+            records_decoder.append(mid_event.elapsed_time(end_event))
+
+    # 计算统计数据
+    avg_backbone = np.mean(records_backbone)
+    avg_decoder = np.mean(records_decoder)
+    total_time = avg_backbone + avg_decoder
+
+    fps = 1000 / total_time
+
+    print("\n" + "=" * 50)
+    print(f"📊 性能分析报告 (Input: {H}x{W})")
+    print("=" * 50)
+    print(f"总平均耗时: \t{total_time:.4f} ms")
+    print(f"预估 FPS: \t{fps:.1f}")
+    print("-" * 50)
+
+    # 打印 Backbone 数据
+    ratio_backbone = (avg_backbone / total_time) * 100
+    print(f"🔹 特征提取 (Backbone):")
+    print(f"   耗时: {avg_backbone:.4f} ms")
+    print(f"   占比: {ratio_backbone:.2f}%")
+
+    # 打印 Decoder 数据
+    ratio_decoder = (avg_decoder / total_time) * 100
+    print(f"🔸 后续操作 (Decoder/Head):")
+    print(f"   耗时: {avg_decoder:.4f} ms")
+    print(f"   占比: {ratio_decoder:.2f}%")
+
+    print("-" * 50)
+    if ratio_decoder > 40:
+        print("💡 建议: 后续操作占比很高 (>40%)。")
+        print("   可以考虑优化 StripPooling (使用 TensorRT 插件) 或减少 Projection 的通道数。")
+    else:
+        print("💡 状态: 计算瓶颈主要在 Backbone，这是正常的。")
+    print("=" * 50)
 
 
 if __name__ == "__main__":
-    # --- 配置 ---
-    MODEL_NAME = 'convnext_pico.d1_in1k'
-    NUM_CLASSES = 9
-    EMBEDDING_DIM = 128
-
-    # 构建预训练权重路径
-    # 这种方式比 try-except 更清晰
-    filename = MODEL_NAME.split('.')[0]
-    possible_paths = [
-        f'./premodels/{filename}.pth',
-        f'./utils/premodels/{filename}.pth',
-    ]
-    PRETRAINED_PATH = next((path for path in possible_paths if os.path.exists(path)), None)
-
-    # --- 模型实例化 ---
-    net = Net(
-        model_name=MODEL_NAME,
-        num_class=NUM_CLASSES,
-        embeddingdim=EMBEDDING_DIM,
-        pretrained_path=PRETRAINED_PATH
-    )
-
-    # --- 推理演示 ---
-    net.eval()  # 切换到评估模式，这对于BN和Dropout层很重要
-
-    # 创建一个随机输入张量
-    input_tensor = torch.randn(3, 3, 224, 224)
-
-    with torch.no_grad():  # 在推理时使用 no_grad 可以节省显存并加速
-        # <--- 优化点 3 和 4 的实践: 在模型外部进行后处理
-        # 1. 获取模型原始输出 (logits)
-        _, logits = net(input_tensor)
-
-        # 2. 计算概率
-        probabilities = torch.softmax(logits, dim=1)
-
-        # 3. 获取最高分的类别和分数
-        scores, indices = torch.max(probabilities, dim=1)
-
-    print("Predicted Indices:", indices)
-    print("Confidence Scores:", scores)
-
-    # 验证输出的类型和形状
-    print("\n--- Verification ---")
-    print("Indices shape:", indices.shape)  # torch.Size([3])
-    print("Indices dtype:", indices.dtype)  # torch.int64
-    print("Scores shape:", scores.shape)  # torch.Size([3])
-    print("Scores dtype:", scores.dtype)  # torch.float32
+    run_profiling()
