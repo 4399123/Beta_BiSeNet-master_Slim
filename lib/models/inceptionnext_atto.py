@@ -98,9 +98,9 @@ def load_checkpoint(
     return incompatible_keys
 
 
-class IncetionNeXt_Atto(nn.Module):
+class InceptionNeXt_Atto(nn.Module):
     def __init__(self):
-        super(IncetionNeXt_Atto, self).__init__()
+        super(InceptionNeXt_Atto, self).__init__()
         self.out_indices = [1,2,3]
         self.selected_feature_extractor = timm.create_model('inception_next_atto.sail_in1k', features_only=True, out_indices=self.out_indices,pretrained=False)
         try:
@@ -128,7 +128,7 @@ class IncetionNeXt_Atto(nn.Module):
 
 
 if __name__ == "__main__":
-    net = IncetionNeXt_Atto()
+    net = InceptionNeXt_Atto()
     x = torch.randn(2, 3, 224, 224)
     out = net(x)
     print(out[0].size())

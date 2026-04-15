@@ -57,10 +57,10 @@ class EfficientNetV2_B3(nn.Module):
         super(EfficientNetV2_B3, self).__init__()
         self.out_indices = [2, 3,4]
         self.selected_feature_extractor = timm.create_model('tf_efficientnetv2_b3.in21k_ft_in1k', features_only=True, out_indices=self.out_indices,pretrained=False)
-        try:
-            load_checkpoint(self.selected_feature_extractor, '../lib/premodels/efficientnetv2_b3.pth')
-        except:
-            load_checkpoint(self.selected_feature_extractor, '../premodels/efficientnetv2_b3.pth')
+        # try:
+        #     load_checkpoint(self.selected_feature_extractor, '../lib/premodels/efficientnetv2_b3.pth')
+        # except:
+        #     load_checkpoint(self.selected_feature_extractor, '../premodels/efficientnetv2_b3.pth')
 
     def forward(self, x):
         x=self.selected_feature_extractor(x)

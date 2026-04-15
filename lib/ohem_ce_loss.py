@@ -348,6 +348,35 @@ class LogCoshDiceOhemLovaszLoss(nn.Module):
         return self.ohem_weight * ohem_loss + self.lovasz_weight * lovasz_loss
 
 
+class OptimizedCombinedLoss(nn.Module):
+    """优化的组合损失"""
+    def __init__(self, lb_ignore=255):
+        super().__init__()
+        self.ohem_ce = OhemCELoss(0.7)
+        self.dice = LogCoshDiceLoss()
+        self.lovasz = lovasz_softmax
+
+        # 动态权重
+        self.weights = nn.Parameter(torch.ones(3))
+
+    def forward(self, pred, target, epoch=0):
+        # 基础损失
+        loss_ce = self.ohem_ce(pred, target)
+        loss_dice = self.dice(pred, target)
+        loss_lovasz = self.lovasz(F.softmax(pred, dim=1), target, ignore=255)
+
+        # 动态权重（使用 softmax 归一化）
+        w = F.softmax(self.weights, dim=0)
+
+        # 组合
+        total_loss = (w[0] * loss_ce +
+                      w[1] * loss_dice +
+                      w[2] * loss_lovasz )
+
+        return total_loss
+
+
+
 if __name__ == '__main__':
     pass
 

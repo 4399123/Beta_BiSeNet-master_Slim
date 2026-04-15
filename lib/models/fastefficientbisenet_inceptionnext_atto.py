@@ -3,9 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn import BatchNorm2d
 from torch.cuda.amp import autocast
-from .inceptionnext_atto import IncetionNeXt_Atto
-
-
+from .inceptionnext_atto import InceptionNeXt_Atto
 
 class ConvBNReLU(nn.Module):
     """标准的卷积-BN-激活模块"""
@@ -161,18 +159,18 @@ class SegmentationHead(nn.Module):
         return x
 
 
-class FastEfficientBiSeNet_IncetionNeXt_Atto(nn.Module):
+class FastEfficientBiSeNet_InceptionNeXt_Atto(nn.Module):
     def __init__(self, n_classes, aux_mode='train', use_fp16=False, img_size=(512, 512)):
         """
         img_size: 用于计算 SPPM 静态池化参数，务必与实际输入一致。
         """
-        super(FastEfficientBiSeNet_IncetionNeXt_Atto, self).__init__()
+        super(FastEfficientBiSeNet_InceptionNeXt_Atto, self).__init__()
         self.use_fp16 = use_fp16
         self.aux_mode = aux_mode
         self.img_size = img_size
 
         # 1. 骨干网络
-        self.backbone = IncetionNeXt_Atto()
+        self.backbone = InceptionNeXt_Atto()
 
         # 通道定义 (需根据实际 Backbone 输出调整)
         self.c3_chan = 80  # Stride 8
@@ -255,7 +253,7 @@ if __name__ == "__main__":
 
     try:
         print(f"Initializing model with image size: {img_height}x{img_width}...")
-        net = FastEfficientBiSeNet_IncetionNeXt_Atto(n_classes=n_classes, aux_mode='train', img_size=(img_height, img_width))
+        net = FastEfficientBiSeNet_InceptionNeXt_Atto(n_classes=n_classes, aux_mode='train', img_size=(img_height, img_width))
         net.train()
 
         # 模拟输入

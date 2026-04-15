@@ -168,6 +168,35 @@ class Compose(object):
         return im_lb
 
 
+class GridMask:
+    def __init__(self, d_range=(96, 224), ratio=0.6, prob=0.5):
+        self.d_range = d_range
+        self.ratio = ratio
+        self.prob = prob
+
+    def __call__(self, im_lb):
+        if np.random.random() > self.prob:
+            return im_lb
+
+        im, lb = im_lb['im'], im_lb['lb']
+        h, w = im.shape[:2]
+
+        # 随机选择网格大小
+        d = np.random.randint(*self.d_range)
+
+        # 创建网格掩码
+        mask = np.ones((h, w), dtype=np.float32)
+        for i in range(0, h, d):
+            for j in range(0, w, d):
+                mask[i:i + int(d * self.ratio), j:j + int(d * self.ratio)] = 0
+
+        # 应用掩码
+        mask = mask[:, :, None]
+        im = (im * mask).astype(np.uint8)
+
+        return dict(im=im, lb=lb)
+
+
 class TransformationTrain(object):
 
     def __init__(self, scales, cropsize):
@@ -175,6 +204,7 @@ class TransformationTrain(object):
             RandomResizedCrop(scales, cropsize),
             RandomHorizontalFlip(),
             RandomVerticalFlip(),
+            # GridMask(prob=0.3),  # 新增
             ColorJitter(
                 brightness=0.4,
                 contrast=0.4,
