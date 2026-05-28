@@ -85,6 +85,7 @@ from .fastefficientbisenet_shvit_s1  import FastEfficientBiSeNet_SHViT_S1
 from .fastefficientbisenet_shvit_s3  import FastEfficientBiSeNet_SHViT_S3
 from .fastefficientbisenet_swiftformer_xs  import FastEfficientBiSeNet_SwiftFormer_XS
 from .fastefficientbisenet_swiftformer_s  import FastEfficientBiSeNet_SwiftFormer_S
+from .fastefficientbisenet_inceptionnext_atto_v2  import FastEfficientBiSeNet_InceptionNeXt_Atto_V2
 
 #fastefficientformerseg
 from .fastefficientformerseg_efficientnetv2_b3 import FastEfficientFormerSeg_EfficientNetV2_B3
@@ -162,4 +163,5 @@ model_factory = {
     'fastefficientbisenet_shvit_s3': FastEfficientBiSeNet_SHViT_S3,
     'fastefficientbisenet_swiftformer_xs': FastEfficientBiSeNet_SwiftFormer_XS,
     'fastefficientbisenet_swiftformer_s': FastEfficientBiSeNet_SwiftFormer_S,
+    'fastefficientbisenet_inceptionnext_atto_v2': FastEfficientBiSeNet_InceptionNeXt_Atto_V2,
 }

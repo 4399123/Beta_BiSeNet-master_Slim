@@ -110,9 +110,9 @@ python -m paddle.distributed.launch  --gpus '0,1,2,3,4'  --log_dir=./log/   --ip
 python -m paddle.distributed.launch  --gpus '0,1,2,3,4'  --log_dir=./log/   --ips=172.31.141.51 --start_port=4080  1_train.py
 python -m paddle.distributed.launch  --gpus '0,1'  --log_dir=./log/   --start_port=4080  1_train.py
 旧版：paddle2onnx --model_dir ../inference/en_PP-OCRv4_rec_export   --model_filename inference.pdmodel   --params_filename inference.pdiparams    --save_file ../inference/rec_onnx/best.onnx   --opset_version 11   --input_shape_dict="{'x':[-1,3,-1,-1]}"   --enable_onnx_checker True
-新版：paddle2onnx --model_dir ../inference/en_PP-OCRv4_rec_export   --model_filename inference.pdmodel   --params_filename inference.pdiparams    --save_file ../inference/rec_onnx/best.onnx   --opset_version 11     --enable_onnx_checker True
-paddle2onnx --model_dir tools  --model_filename onnx/model.pdmodel  --params_filename onnx/model.pdiparams  --opset_version 11 --save_file tools/onnx/best.onnx 
-
+新版：paddle2onnx --model_dir ../inference/en_PP-OCRv4_rec_export_fixshape   --model_filename inference.pdmodel   --params_filename inference.pdiparams    --save_file ../inference/rec_onnx/best.onnx   --opset_version 16     --enable_onnx_checker True
+旧版：paddle2onnx --model_dir tools  --model_filename onnx/model.pdmodel  --params_filename onnx/model.pdiparams  --opset_version 11 --save_file tools/onnx/best.onnx 
+新版：paddle2onnx --model_dir tools  --model_filename onnx/model.pdmodel  --params_filename onnx/model.pdiparams  --opset_version 16 --save_file tools/onnx/best.onnx 
 
 python setup.py install
 nvidia-smi -q -d TEMPERATURE

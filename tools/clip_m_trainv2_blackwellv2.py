@@ -54,7 +54,7 @@ printlabels = ['background', 'QPZZ', 'MDBD', 'MNYW', 'WW', 'LMPS', 'BMQQ', 'LMHH
 def parse_args():
     parse = argparse.ArgumentParser()
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/fastefficientformerseg_blueface_efficientnetv2_b3.py', )
+                       default='../configs/fastefficientbisenet_blueface_inceptionnext_atto_v2.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
     # 增加 SWA 相关的命令行参数
@@ -82,7 +82,7 @@ def set_model(lb_ignore=255):
     net.cuda()
     net.train()
 
-    loss_opt = 9
+    loss_opt = 0
     criteria_pre = 0
     criteria_aux = 0
     if (loss_opt == 0):
@@ -122,7 +122,7 @@ def set_model(lb_ignore=255):
 
 
 def set_optimizer(model):
-    optim_opt = 2
+    optim_opt = 1
     optim = 0
     if (optim_opt == 0):
         optim = AdaBelief(model.parameters(), lr=cfg.lr_start, weight_decay=cfg.weight_decay)

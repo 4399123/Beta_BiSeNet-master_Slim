@@ -6,3 +6,9 @@ timm_bak/timm1015/
 tools/res/
 tools/runs/
 ~$测试数据.xlsx
+timm/__pycache__/
+timm/data/__pycache__/
+timm/data/readers/__pycache__/
+timm/layers/__pycache__/
+timm/models/__pycache__/
+timm/utils/__pycache__/
