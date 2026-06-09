@@ -12,3 +12,4 @@ timm/data/readers/__pycache__/
 timm/layers/__pycache__/
 timm/models/__pycache__/
 timm/utils/__pycache__/
+lib/models/__pycache__/

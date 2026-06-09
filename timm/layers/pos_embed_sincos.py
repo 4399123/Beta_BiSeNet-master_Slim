@@ -269,7 +269,10 @@ def apply_rot_embed_cat(
         emb: torch.Tensor,
         half: bool = False
 ) -> torch.Tensor:
-    sin_emb, cos_emb = emb.tensor_split(2, -1)
+    # use indexing instead of tensor_split to avoid SplitToSequence op in ONNX export
+    half_dim = emb.shape[-1] // 2
+    sin_emb = emb[..., :half_dim]
+    cos_emb = emb[..., half_dim:]
     # x: [..., D], eg [x0, x1, x2, x3, x4, x5]
     if half:
         # sin: [..., D], eg [sin0, sin1, sin2, sin0, sin1, sin2]

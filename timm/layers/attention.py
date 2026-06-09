@@ -72,8 +72,12 @@ class Attention(nn.Module):
             attn_mask: Optional[torch.Tensor] = None,
     ) -> torch.Tensor:
         B, N, C = x.shape
-        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
-        q, k, v = qkv.unbind(0)
+        qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim)
+        # use split instead of unbind to avoid SplitToSequence op in ONNX export
+        q, k, v = qkv[:, :, 0], qkv[:, :, 1], qkv[:, :, 2]  # (B, N, num_heads, head_dim)
+        q = q.permute(0, 2, 1, 3)  # (B, num_heads, N, head_dim)
+        k = k.permute(0, 2, 1, 3)
+        v = v.permute(0, 2, 1, 3)
         q, k = self.q_norm(q), self.k_norm(k)
 
         if self.fused_attn:
@@ -188,8 +192,12 @@ class AttentionRope(nn.Module):
 
         if self.qkv is not None:
             qkv = self.qkv(x)
-            qkv = qkv.reshape(B, N, 3, self.num_heads, -1).permute(2, 0, 3, 1, 4)
-            q, k, v = qkv.unbind(0)  # B, num_heads, N, head_dim
+            qkv = qkv.reshape(B, N, 3, self.num_heads, -1)
+            # use indexing instead of unbind to avoid SplitToSequence op in ONNX export
+            q, k, v = qkv[:, :, 0], qkv[:, :, 1], qkv[:, :, 2]  # (B, N, num_heads, head_dim)
+            q = q.permute(0, 2, 1, 3)
+            k = k.permute(0, 2, 1, 3)
+            v = v.permute(0, 2, 1, 3)  # B, num_heads, N, head_dim
         else:
             q = self.q_proj(x).reshape(B, N, self.num_heads, -1).transpose(1, 2)  # B, num_heads, N, C
             k = self.k_proj(x).reshape(B, N, self.num_heads, -1).transpose(1, 2)

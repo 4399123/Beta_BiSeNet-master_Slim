@@ -1,0 +1,21 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "export_onnx_新方案",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/export_onnx_新方案.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        },
+        {
+            "name": "clip_m_trainv2_blackwell_v2",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/tools/clip_m_trainv2_blackwell_v2.py",
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal"
+        }
+    ]
+}

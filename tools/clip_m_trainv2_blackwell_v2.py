@@ -19,26 +19,23 @@ import torch.distributed as dist
 from torch.utils.data import DataLoader
 import torch.cuda.amp as amp
 
-# 导入 SWA 相关工具
-from torch.optim.swa_utils import AveragedModel, SWALR, update_bn
-
 from lib.models import model_factory
 from configs import set_cfg_from_file
 from lib.data import get_data_loader
 from evaluate import eval_model
-from lib.ohem_ce_loss import OhemCELoss, FocalLoss, PolyFocalLoss, IoULoss, DiceLoss, LogCoshDiceOhemLovaszLoss
+from lib.ohem_ce_loss import OhemCELoss, FocalLoss, PolyFocalLoss, IoULoss, DiceLoss,LogCoshDiceOhemLovaszLoss
 from lib.ohem_ce_loss import DiceWithOhemCELoss, DiceWithFocalLoss, DiceBCELoss, OhemWithIoULoss, OhemWithFocalLoss, \
-    GDiceWithOhemCELoss, LogCoshDiceLossWithOhemCELoss, FocalTverskyWithOhemCELoss,OptimizedCombinedLoss
+    GDiceWithOhemCELoss, LogCoshDiceLossWithOhemCELoss, FocalTverskyWithOhemCELoss
 from lib.lr_scheduler import WarmupPolyLrScheduler
 from lib.meters import TimeMeter, AvgMeter
-from lib.logger import setup_logger, print_log_msg, print_log_msgs
+from lib.logger import setup_logger, print_log_msg, print_log_msgs,print_log_msgs_segformer
 from tqdm import tqdm
 from timm.optim import AdamW, AdamP, RAdam, Lookahead, AdaBelief, Lion, Lamb
 from timm.scheduler import CosineLRScheduler
 from torch.utils.tensorboard import SummaryWriter
 from timm.layers.norm_act import convert_sync_batchnorm
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,4,5"
 
 ## fix all random seeds
 torch.manual_seed(42)
@@ -53,14 +50,12 @@ printlabels = ['background', 'QPZZ', 'MDBD', 'MNYW', 'WW', 'LMPS', 'BMQQ', 'LMHH
 
 def parse_args():
     parse = argparse.ArgumentParser()
+    # parse.add_argument('--config', dest='config', type=str,
+    #         default='../configs/bisenetv1_blueface_caformer_s36.py',)
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/fastefficientbisenet_blueface_inceptionnext_atto_v2.py', )
+                       default='../configs/dinov3segnet_blueface_vit_b.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
-    # 增加 SWA 相关的命令行参数
-    parse.add_argument('--use-swa', action='store_true', default=True, help='whether to use SWA')
-    parse.add_argument('--swa-start', type=float, default=0.75, help='start swa at this fraction of total epochs')
-    parse.add_argument('--swa-lr', type=float, default=0.01, help='swa learning rate')
     return parse.parse_args()
 
 
@@ -78,13 +73,15 @@ def set_model(lb_ignore=255):
                                              map_location='cpu'), strict=False)
         logger.info('\tmissing keys: ' + json.dumps(msg.missing_keys))
         logger.info('\tunexpected keys: ' + json.dumps(msg.unexpected_keys))
+    # if cfg.use_sync_bn: net = nn.SyncBatchNorm.convert_sync_batchnorm(net)
     if cfg.use_sync_bn: net = convert_sync_batchnorm(net)
     net.cuda()
     net.train()
 
     loss_opt = 0
+
     criteria_pre = 0
-    criteria_aux = 0
+    criteria_aux = []   # num_aux_heads=0 时保持空列表，避免后续 zip 报错
     if (loss_opt == 0):
         criteria_pre = OhemCELoss(0.7, lb_ignore)
         criteria_aux = [OhemCELoss(0.7, lb_ignore) for _ in range(cfg.num_aux_heads)]
@@ -112,9 +109,6 @@ def set_model(lb_ignore=255):
     elif (loss_opt == 8):
         criteria_pre = LogCoshDiceOhemLovaszLoss()
         criteria_aux = [LogCoshDiceOhemLovaszLoss() for _ in range(cfg.num_aux_heads)]
-    elif (loss_opt == 9):
-        criteria_pre = OptimizedCombinedLoss()
-        criteria_aux = [OptimizedCombinedLoss() for _ in range(cfg.num_aux_heads)]
     else:
         print('no such loss !!!')
 
@@ -136,10 +130,14 @@ def set_optimizer(model):
         optim = Lion(model.parameters(), lr=cfg.lr_start, weight_decay=cfg.weight_decay, )
     elif (optim_opt == 5):
         optim = Lamb(model.parameters(), lr=cfg.lr_start, weight_decay=cfg.weight_decay, )
+    # base_optim = RAdam(model.parameters(), lr=cfg.lr_start, weight_decay=5e-4)
+    # optim=Lookahead(base_optimizer=base_optim,k=5,alpha=0.5)
+
     return optim
 
 
 def set_model_dist(net):
+    # [Modified by Gemini] Fix for torchrun: check env var first
     if 'LOCAL_RANK' in os.environ:
         local_rank = int(os.environ['LOCAL_RANK'])
     else:
@@ -155,6 +153,7 @@ def set_model_dist(net):
 
 
 def set_meters():
+    # time_meter = TimeMeter(cfg.max_iter)
     time_meter = TimeMeter(cfg.max_epochs)
     loss_meter = AvgMeter('loss')
     loss_pre_meter = AvgMeter('loss_prem')
@@ -175,14 +174,6 @@ def train(writer):
     ## optimizer
     optim = set_optimizer(net)
 
-    ## SWA initialization
-    use_swa = args.use_swa
-    if use_swa:
-        swa_model = AveragedModel(net)
-        swa_start = int(args.swa_start * cfg.max_epochs)
-        swa_scheduler = SWALR(optim, swa_lr=args.swa_lr)
-        logger.info(f'SWA is enabled. Starting at epoch {swa_start} with lr {args.swa_lr}')
-
     ## mixed precision training
     scaler = amp.GradScaler()
 
@@ -195,6 +186,7 @@ def train(writer):
     lr_schdr = CosineLRScheduler(optimizer=optim,
                                  t_initial=cfg.max_epochs,
                                  lr_min=5e-6,
+                                 # warmup_t=0.05 * cfg.max_epochs,
                                  warmup_t=2,
                                  warmup_lr_init=1e-4)
 
@@ -203,24 +195,17 @@ def train(writer):
     mrecall = 0.0
     gap = int(len(dl) / 10)
     if (gap == 0): gap = 2
-
     ## train loop
     for epoch in range(cfg.max_epochs):
 
-        # SWA 调度逻辑
-        if use_swa and epoch >= swa_start:
-            swa_model.update_parameters(net)
-            swa_scheduler.step()
-        else:
-            lr_schdr.step(epoch)
-
+        lr_schdr.step(epoch)
         lr = optim.param_groups[0]['lr']
         writer.add_scalar('lr', lr, epoch)
 
-        net.train()
         for it, (im, lb) in enumerate(dl):
             im = im.cuda()
             lb = lb.cuda()
+
             lb = torch.squeeze(lb, 1)
 
             optim.zero_grad()
@@ -228,73 +213,77 @@ def train(writer):
             with amp.autocast(enabled=cfg.use_fp16):
                 logits, *logits_aux = net(im)
                 loss_pre = criteria_pre(logits, lb)
-                loss_aux = [crit(lgt, lb) for crit, lgt in zip(criteria_aux, logits_aux)]
-                loss = loss_pre + aux_weight * sum(loss_aux)
-
+                if cfg.num_aux_heads > 0:
+                    loss_aux = [crit(lgt, lb) for crit, lgt in zip(criteria_aux, logits_aux)]
+                    loss = loss_pre + aux_weight * sum(loss_aux)
+                else:
+                    loss_aux = []
+                    loss = loss_pre
             scaler.scale(loss).backward()
+            # clip
             scaler.unscale_(optim)
             torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=5, norm_type=2)
+
             scaler.step(optim)
             scaler.update()
             torch.cuda.synchronize()
 
+            # time_meter.update()
             loss_meter.update(loss.item())
             loss_pre_meter.update(loss_pre.item())
-            _ = [mter.update(lss.item()) for mter, lss in zip(loss_aux_meters, loss_aux)]
+            if cfg.num_aux_heads > 0:
+                _ = [mter.update(lss.item()) for mter, lss in zip(loss_aux_meters, loss_aux)]
 
+            ## print training log message
+            # if (it + 1) % 200 == 0:
             if (it + 1) % gap == 0:
-                print_log_msgs(epoch, cfg.max_epochs, it, len(dl), lr, loss_meter, loss_pre_meter, loss_aux_meters,
+                # print_log_msg(epoch,cfg.max_epochs,it, len(dl), lr, time_meter, loss_meter,loss_pre_meter, loss_aux_meters)
+                if cfg.num_aux_heads > 0:
+                    print_log_msgs(epoch, cfg.max_epochs, it, len(dl), lr, loss_meter, loss_pre_meter, loss_aux_meters,
                                writer)
-
+                else:
+                    print_log_msgs_segformer(epoch, cfg.max_epochs, it, len(dl), lr, loss_meter,writer)
         interv, ets = time_meter.get()
         logger.info('ets:{},interv:{:.2f}s'.format(ets, interv))
         time_meter.update()
 
         torch.cuda.empty_cache()
-
-        # 评估阶段：如果开启 SWA 且在 SWA 阶段，使用 swa_model 进行评估
-        eval_net = net.module
-        if use_swa and epoch >= swa_start:
-            # SWA 评估前需要更新 BN
-            update_bn(dl, swa_model)
-            eval_net = swa_model.module
-
         iou_heads, iou_content, f1_heads, f1_content, precision_heads, precision_content, recall_heads, recall_content = eval_model(
-            cfg, eval_net, printlabels)
+            cfg, net.module, printlabels)
 
         logger.info('\neval results of miou metric:')
         logger.info('\n' + tabulate(iou_content, headers=iou_heads, tablefmt='orgtbl'))
 
-        current_miou = float(iou_content[-2][-1])
-        writer.add_scalar('miou', current_miou, epoch)
+        logger.info('\neval results of mprecision metric:')
+        logger.info('\n' + tabulate(precision_content, headers=precision_heads, tablefmt='orgtbl'))
+
+        logger.info('\neval results of mrecall metric:')
+        logger.info('\n' + tabulate(recall_content, headers=recall_heads, tablefmt='orgtbl'))
+
+        writer.add_scalar('miou', float(iou_content[-2][-1]), epoch)
         writer.add_scalar('mprecision', float(precision_content[-1][-1]), epoch)
         writer.add_scalar('mrecall', float(recall_content[-1][-1]), epoch)
-
-        if (miou < current_miou):
-            miou = current_miou
+        if (miou < float(iou_content[-2][-1])):
+            miou = float(iou_content[-2][-1])
             mprecision = float(precision_content[-1][-1])
             mrecall = float(recall_content[-1][-1])
-            if dist.get_rank() == 0:
-                torch.save(eval_net.state_dict(), '../pt/best.pt')
+            if dist.get_rank() == 0: torch.save(net.module.state_dict(), '../pt/best.pt')
             logger.info("miou:{},mprecision:{},mrecall:{},save model!!!".format(miou, mprecision, mrecall))
         logger.info("best miou:{},mprecision:{},mrecall:{}".format(miou, mprecision, mrecall))
-
-    # 训练结束，若开启了 SWA，最终保存一次 SWA 模型
-    if use_swa and dist.get_rank() == 0:
-        update_bn(dl, swa_model)
-        torch.save(swa_model.module.state_dict(), '../pt/swa_final.pt')
-        logger.info("Final SWA model saved to ../pt/swa_final.pt")
 
     return
 
 
 def main(writer):
+    # [Modified by Gemini] Fix for torchrun: check env var first
     if 'LOCAL_RANK' in os.environ:
         local_rank = int(os.environ['LOCAL_RANK'])
     else:
         local_rank = int(args.local_rank) if args.local_rank is not None else 0
 
     torch.cuda.set_device(local_rank)
+
+    # [Modified by Gemini] Use nccl for GPU training instead of gloo
     dist.init_process_group(backend='nccl')
 
     if not osp.exists(cfg.respth): os.makedirs(cfg.respth)
