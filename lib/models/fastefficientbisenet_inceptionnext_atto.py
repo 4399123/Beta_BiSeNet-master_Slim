@@ -240,7 +240,7 @@ class FastEfficientBiSeNet_InceptionNeXt_Atto(nn.Module):
 
             elif self.aux_mode == 'pred':
                 pred = torch.argmax(logits, dim=1)
-                return  pred.float()
+                return  pred.float()   #trt11,不能使用float(),否则会报错
             else:
                 raise NotImplementedError
 

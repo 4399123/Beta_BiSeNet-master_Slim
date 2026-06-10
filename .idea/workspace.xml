@@ -5,17 +5,10 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="af36840f-6835-49f5-a8d1-87d380c427c8" name="更改" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/.gitignore" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/Project_Default.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/lovasz_losses.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/lovasz_losses.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/models/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/attention.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/attention.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/pos_embed_sincos.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/pos_embed_sincos.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwellv2.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/export_onnx.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/models/fastefficientbisenet_inceptionnext_atto.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/fastefficientbisenet_inceptionnext_atto.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tools/export_onnx_新方案.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx_新方案.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/测试数据.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/测试数据.xlsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -36,14 +29,39 @@
   </component>
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
+    "Python.diagnose_fp16.executor": "Run",
     "Python.export_onnx.executor": "Run",
+    "Python.export_onnx_fp16.executor": "Run",
     "Python.export_onnx_新方案.executor": "Run",
+    "Python.onnxrun.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.git.unshallow": "true",
     "git-widget-placeholder": "main"
   }
 }]]></component>
   <component name="RunManager" selected="Python.onnxrun">
+    <configuration name="diagnose_fp16" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="Beta_BiSeNet-master_Slim" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tools" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tools/diagnose_fp16.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="export_onnx" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Beta_BiSeNet-master_Slim" />
       <option name="ENV_FILES" value="" />
@@ -88,6 +106,28 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
+    <configuration name="export_onnx_fp16" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="Beta_BiSeNet-master_Slim" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tools" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tools/export_onnx_fp16.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="onnxrun" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Beta_BiSeNet-master_Slim" />
       <option name="ENV_FILES" value="" />
@@ -113,7 +153,9 @@
     <recent_temporary>
       <list>
         <item itemvalue="Python.onnxrun" />
+        <item itemvalue="Python.export_onnx_fp16" />
         <item itemvalue="Python.export_onnx_新方案" />
+        <item itemvalue="Python.diagnose_fp16" />
         <item itemvalue="Python.export_onnx" />
       </list>
     </recent_temporary>
