@@ -41,7 +41,15 @@ class RepeatedDistSampler(Sampler):
         self.num_imgs = num_imgs
         self.shuffle = shuffle
         self.ba = ba
+        self.epoch = 0
 
+    def set_epoch(self, epoch):
+        """Set the epoch for this sampler so shuffling differs across epochs.
+
+        Should be called at the beginning of every epoch before creating the
+        DataLoader iterator, to ensure each rank reshuffles consistently.
+        """
+        self.epoch = epoch
 
     def __iter__(self):
         # deterministically shuffle based on epoch
@@ -50,7 +58,9 @@ class RepeatedDistSampler(Sampler):
         indices = []
         for n in range(n_repeats):
             if self.shuffle:
-                g.manual_seed(n)
+                # Combine epoch and repeat index so each epoch gets a different
+                # but deterministic permutation, identical across all ranks.
+                g.manual_seed(self.epoch * 1000003 + n)
                 indices += torch.randperm(len(self.dataset), generator=g).tolist()
             else:
                 indices += [i for i in range(len(self.dataset))]

@@ -5,7 +5,7 @@ cfg = dict(
     num_aux_heads=3,
     lr_start=0.0002,
     weight_decay=5e-4,
-    max_epochs=300,
+    max_epochs=200,
     dataset='BlueFaceDataset',
     im_root='../../BlueFaceDataX2',
     train_im_anns='../../BlueFaceDataX2/train.txt',
@@ -14,7 +14,7 @@ cfg = dict(
     cropsize=[512, 512],
     ims_per_gpu=32,
     eval_ims_per_gpu=1,
-    use_fp16=False,
+    use_fp16=True,
     use_sync_bn=True,
     respth='./res',
 )

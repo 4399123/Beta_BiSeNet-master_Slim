@@ -6,10 +6,12 @@
   <component name="ChangeListManager">
     <list default="true" id="af36840f-6835-49f5-a8d1-87d380c427c8" name="更改" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/models/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/models/hgnetv2_b6.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/hgnetv2_b6.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/export_onnx_新方案.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx_新方案.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_hgnetv2_b6.py" beforeDir="false" afterPath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_hgnetv2_b6.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/configs/proseg_blueface_hgnetv2_b6.py" beforeDir="false" afterPath="$PROJECT_DIR$/configs/proseg_blueface_hgnetv2_b6.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker_use.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docker_use.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/data/get_dataloader.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/get_dataloader.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/data/sampler.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/sampler.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell_v2.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell_v2.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/测试数据.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/测试数据.xlsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -20,31 +22,31 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
-  <component name="ProjectColorInfo"><![CDATA[{
-  "customColor": "",
-  "associatedIndex": 2
-}]]></component>
+  <component name="ProjectColorInfo">{
+  &quot;customColor&quot;: &quot;&quot;,
+  &quot;associatedIndex&quot;: 2
+}</component>
   <component name="ProjectId" id="3EtZbXvBprBX0YygaCl8Qv5bJhr" />
   <component name="ProjectViewState">
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python.diagnose_fp16.executor": "Run",
-    "Python.export_onnx.executor": "Run",
-    "Python.export_onnx_fp16.executor": "Run",
-    "Python.export_onnx_新方案.executor": "Run",
-    "Python.fastefficientbisenet_hgnetv2_b6.executor": "Run",
-    "Python.hgnetv2_b6.executor": "Run",
-    "Python.onnxrun.executor": "Run",
-    "Python.proseg_hgnetv2_b6.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "main",
-    "last_opened_file_path": "D:/F/ABlueFaceProj/20240618/Seg/Beta_BiSeNet-master_Slim/configs"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.diagnose_fp16.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx_fp16.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx_新方案.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;Python.hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;Python.onnxrun.executor&quot;: &quot;Run&quot;,
+    &quot;Python.proseg_hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/F/ABlueFaceProj/20240618/Seg/Beta_BiSeNet-master_Slim/configs&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="D:\F\ABlueFaceProj\20240618\Seg\Beta_BiSeNet-master_Slim\configs" />

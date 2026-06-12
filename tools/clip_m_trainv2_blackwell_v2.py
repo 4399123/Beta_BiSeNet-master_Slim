@@ -35,13 +35,16 @@ from timm.scheduler import CosineLRScheduler
 from torch.utils.tensorboard import SummaryWriter
 from timm.layers.norm_act import convert_sync_batchnorm
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,4,5"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4"
 
-## fix all random seeds
-torch.manual_seed(42)
-torch.cuda.manual_seed(42)
-np.random.seed(42)
-random.seed(42)
+## fix all random seeds (per-rank offset so each process draws a different
+## augmentation stream; dist isn't initialized yet here, so read the rank from
+## the environment variable set by torchrun / launch).
+_rank = int(os.environ.get('LOCAL_RANK', os.environ.get('RANK', 0)))
+torch.manual_seed(42 + _rank)
+torch.cuda.manual_seed(42 + _rank)
+np.random.seed(42 + _rank)
+random.seed(42 + _rank)
 #  torch.backends.cudnn.deterministic = True
 #  torch.backends.cudnn.benchmark = True
 #  torch.multiprocessing.set_sharing_strategy('file_system')
@@ -53,9 +56,16 @@ def parse_args():
     # parse.add_argument('--config', dest='config', type=str,
     #         default='../configs/bisenetv1_blueface_caformer_s36.py',)
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/dinov3segnet_blueface_vit_b.py', )
+                       default='../configs/fastefficientbisenet_blueface_starnet_s1.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
+    parse.add_argument('--scale-epochs-with-world-size', dest='scale_epochs',
+                       type=lambda x: str(x).lower() in ('1', 'true', 'yes', 'y', 't'),
+                       default=True,
+                       help='Whether to multiply max_epochs by world_size so the total '
+                            'number of optimizer steps matches single-GPU training '
+                            '(step-aligned comparison). Default: True. '
+                            'Pass --scale-epochs-with-world-size False to disable.')
     return parse.parse_args()
 
 
@@ -115,22 +125,48 @@ def set_model(lb_ignore=255):
     return net, criteria_pre, criteria_aux
 
 
-def set_optimizer(model):
-    optim_opt = 1
-    optim = 0
-    if (optim_opt == 0):
-        optim = AdaBelief(model.parameters(), lr=cfg.lr_start, weight_decay=cfg.weight_decay)
-    elif (optim_opt == 1):
-        optim = AdamP(model.parameters(), lr=cfg.lr_start, weight_decay=cfg.weight_decay, nesterov=True)
-    elif (optim_opt == 2):
-        optim = AdamW(model.parameters(), lr=cfg.lr_start, weight_decay=cfg.weight_decay)
-    elif (optim_opt == 3):
-        optim = torch.optim.SGD(model.parameters(), lr=cfg.lr_start, momentum=0.9, weight_decay=cfg.weight_decay, )
-    elif (optim_opt == 4):
-        optim = Lion(model.parameters(), lr=cfg.lr_start, weight_decay=cfg.weight_decay, )
-    elif (optim_opt == 5):
-        optim = Lamb(model.parameters(), lr=cfg.lr_start, weight_decay=cfg.weight_decay, )
-    # base_optim = RAdam(model.parameters(), lr=cfg.lr_start, weight_decay=5e-4)
+# Optimizer choice. Lifted to module level so the LR-scaling helper can pick
+# the right scaling rule (linear for SGD, sqrt for adaptive optimizers).
+# 0: AdaBelief, 1: AdamP, 2: AdamW, 3: SGD, 4: Lion, 5: Lamb
+OPTIM_OPT = 1
+
+
+def get_lr_scale():
+    """Compute LR scaling factor for the current effective batch size.
+
+    Effective batch size = ims_per_gpu * world_size. We scale relative to
+    `cfg.base_bs` if defined, otherwise relative to `cfg.ims_per_gpu` (i.e.
+    the original lr_start is assumed to be tuned for single-GPU training).
+
+    SGD uses linear scaling; adaptive optimizers (AdamP/AdamW/AdaBelief/
+    Lion/Lamb) use sqrt scaling, which is the empirically safer choice and
+    avoids blowing up the LR when scaling to many GPUs.
+    """
+    world_size = dist.get_world_size() if dist.is_initialized() else 1
+    base_bs = cfg.get('base_bs', cfg.ims_per_gpu)
+    effective_bs = cfg.ims_per_gpu * world_size
+    ratio = effective_bs / max(base_bs, 1)
+    if OPTIM_OPT == 3:  # SGD: linear scaling
+        return ratio
+    return ratio ** 0.5  # adaptive optimizers: sqrt scaling
+
+
+def set_optimizer(model, lr):
+    if OPTIM_OPT == 0:
+        optim = AdaBelief(model.parameters(), lr=lr, weight_decay=cfg.weight_decay)
+    elif OPTIM_OPT == 1:
+        optim = AdamP(model.parameters(), lr=lr, weight_decay=cfg.weight_decay, nesterov=True)
+    elif OPTIM_OPT == 2:
+        optim = AdamW(model.parameters(), lr=lr, weight_decay=cfg.weight_decay)
+    elif OPTIM_OPT == 3:
+        optim = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9, weight_decay=cfg.weight_decay)
+    elif OPTIM_OPT == 4:
+        optim = Lion(model.parameters(), lr=lr, weight_decay=cfg.weight_decay)
+    elif OPTIM_OPT == 5:
+        optim = Lamb(model.parameters(), lr=lr, weight_decay=cfg.weight_decay)
+    else:
+        raise ValueError(f'Unknown OPTIM_OPT={OPTIM_OPT}')
+    # base_optim = RAdam(model.parameters(), lr=lr, weight_decay=5e-4)
     # optim=Lookahead(base_optimizer=base_optim,k=5,alpha=0.5)
 
     return optim
@@ -171,8 +207,20 @@ def train(writer):
     ## model
     net, criteria_pre, criteria_aux = set_model(dl.dataset.lb_ignore)
 
-    ## optimizer
-    optim = set_optimizer(net)
+    ## optimizer with LR/warmup/lr_min scaled by effective batch size
+    lr_scale = get_lr_scale()
+    scaled_lr = cfg.lr_start * lr_scale
+    scaled_lr_min = 5e-6 * lr_scale
+    scaled_warmup_lr = 1e-4 * lr_scale
+    world_size = dist.get_world_size() if dist.is_initialized() else 1
+    logger.info(
+        'LR scaling: world_size={}, ims_per_gpu={}, base_bs={}, '
+        'scale={:.4f}, lr_start: {:.2e} -> {:.2e}'.format(
+            world_size, cfg.ims_per_gpu, cfg.get('base_bs', cfg.ims_per_gpu),
+            lr_scale, cfg.lr_start, scaled_lr,
+        )
+    )
+    optim = set_optimizer(net, scaled_lr)
 
     ## mixed precision training
     scaler = amp.GradScaler()
@@ -183,12 +231,27 @@ def train(writer):
     ## meters
     time_meter, loss_meter, loss_pre_meter, loss_aux_meters = set_meters()
 
+    # Optionally scale the epoch count with world_size so that the total number
+    # of optimizer steps matches single-GPU training (step-aligned comparison).
+    max_epochs = cfg.max_epochs
+    if args.scale_epochs and dist.is_initialized():
+        max_epochs = cfg.max_epochs * dist.get_world_size()
+        logger.info(
+            'scale-epochs enabled: max_epochs {} -> {} (x world_size={})'.format(
+                cfg.max_epochs, max_epochs, dist.get_world_size()))
+    else:
+        logger.info(
+            'scale-epochs disabled: max_epochs={} (world_size={})'.format(
+                max_epochs, dist.get_world_size() if dist.is_initialized() else 1))
+    # keep ETA estimation consistent with the actual epoch count
+    time_meter.max_iter = max_epochs
+
     lr_schdr = CosineLRScheduler(optimizer=optim,
-                                 t_initial=cfg.max_epochs,
-                                 lr_min=5e-6,
+                                 t_initial=max_epochs,
+                                 lr_min=scaled_lr_min,
                                  # warmup_t=0.05 * cfg.max_epochs,
                                  warmup_t=2,
-                                 warmup_lr_init=1e-4)
+                                 warmup_lr_init=scaled_warmup_lr)
 
     miou = 0.0
     mprecision = 0.0
@@ -196,7 +259,11 @@ def train(writer):
     gap = int(len(dl) / 10)
     if (gap == 0): gap = 2
     ## train loop
-    for epoch in range(cfg.max_epochs):
+    for epoch in range(max_epochs):
+        if hasattr(dl, 'batch_sampler') and hasattr(dl.batch_sampler, 'sampler'):
+            sampler = dl.batch_sampler.sampler
+            if hasattr(sampler, 'set_epoch'):
+                sampler.set_epoch(epoch)
 
         lr_schdr.step(epoch)
         lr = optim.param_groups[0]['lr']
@@ -209,7 +276,7 @@ def train(writer):
             lb = torch.squeeze(lb, 1)
 
             optim.zero_grad()
-            aux_weight = 0.5 * (1 - epoch / cfg.max_epochs)
+            aux_weight = 0.5 * (1 - epoch / max_epochs)
             with amp.autocast(enabled=cfg.use_fp16):
                 logits, *logits_aux = net(im)
                 loss_pre = criteria_pre(logits, lb)
@@ -239,10 +306,10 @@ def train(writer):
             if (it + 1) % gap == 0:
                 # print_log_msg(epoch,cfg.max_epochs,it, len(dl), lr, time_meter, loss_meter,loss_pre_meter, loss_aux_meters)
                 if cfg.num_aux_heads > 0:
-                    print_log_msgs(epoch, cfg.max_epochs, it, len(dl), lr, loss_meter, loss_pre_meter, loss_aux_meters,
+                    print_log_msgs(epoch, max_epochs, it, len(dl), lr, loss_meter, loss_pre_meter, loss_aux_meters,
                                writer)
                 else:
-                    print_log_msgs_segformer(epoch, cfg.max_epochs, it, len(dl), lr, loss_meter,writer)
+                    print_log_msgs_segformer(epoch, max_epochs, it, len(dl), lr, loss_meter,writer)
         interv, ets = time_meter.get()
         logger.info('ets:{},interv:{:.2f}s'.format(ets, interv))
         time_meter.update()
