@@ -5,7 +5,7 @@
 import torch
 import torch.nn as nn
 from timm.layers.squeeze_excite import EffectiveSEModule
-from .inceptionnext_tiny import IncetionNeXt_Tiny
+from .inceptionnext_tiny import InceptionNeXt_Tiny
 from torch.nn import BatchNorm2d
 from torch.cuda.amp import autocast
 
@@ -113,7 +113,7 @@ class AttentionRefinementModule(nn.Module):
 class ContextPath(nn.Module):
     def __init__(self, *args, **kwargs):
         super(ContextPath, self).__init__()
-        self.resnet = IncetionNeXt_Tiny()
+        self.resnet = InceptionNeXt_Tiny()
         self.arm16 = AttentionRefinementModule(384, 256)
         self.arm32 = AttentionRefinementModule(768, 256)
         self.conv_head32 = ConvBNReLU(256, 256, ks=3, stride=1, padding=1)

@@ -59,7 +59,7 @@ docker exec -it zl_gpu3_178 /bin/bash     paddleocr-2.5.2-11.2
 
 
 cat BaoFengSegDataSetV42_PP.zip.0* >BaoFengSegDataSetV42_PP.zip
-cat BaoFengSegDataSetV43.zip.0* >BaoFengSegDataSetV43.zip
+cat GZ3DSegDataSet_V3.zip.0* >GZ3DSegDataSet_V3.zip
 
 export CUDA_VISIBLE_DEVICES=1,2,3,4
 export CUDA_VISIBLE_DEVICES=0,1,2,3,4

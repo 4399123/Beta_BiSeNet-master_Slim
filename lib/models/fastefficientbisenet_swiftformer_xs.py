@@ -209,6 +209,21 @@ class FastEfficientBiSeNet_SwiftFormer_XS(nn.Module):
             # 获取输入尺寸，仅用于校验或备用，不再用于动态 Resize
             H, W = x.size()[2:]
 
+            if (self.aux_mode == 'pred'):
+                x = x.float()
+                # # 如果是单通道输入，复制为3通道
+                # if x.size(1) == 1:
+                #     x = x.repeat(1, 3, 1, 1)
+
+                x = torch.flip(x, dims=[1])
+
+                # 定义均值和方差
+                mean = torch.tensor([120.0, 114.0, 104.0]).view(1, 3, 1, 1)
+                std = torch.tensor([70.0, 69.0, 73.0]).view(1, 3, 1, 1)
+
+                # 归一化：(x - mean) / std
+                x = (x - mean) / std
+
             # Encoder
             feat8, feat16, feat32 = self.backbone(x)
 
@@ -241,8 +256,10 @@ class FastEfficientBiSeNet_SwiftFormer_XS(nn.Module):
                 return logits,
 
             elif self.aux_mode == 'pred':
-                pred = torch.argmax(logits, dim=1)
-                return  pred.float()
+                feat_out = torch.argmax(logits, dim=1)
+                feat_out = torch.tensor(feat_out, dtype=torch.float32)
+                feat_out = feat_out[:, None, :, :]
+                return feat_out
             else:
                 raise NotImplementedError
 

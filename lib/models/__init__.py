@@ -88,6 +88,8 @@ from .fastefficientbisenet_swiftformer_s  import FastEfficientBiSeNet_SwiftForme
 from .fastefficientbisenet_inceptionnext_atto_v2  import FastEfficientBiSeNet_InceptionNeXt_Atto_V2
 from .fastefficientbisenet_vit_s_dinov3  import FastEfficientBiSeNet_Vit_S_DinoV3
 from .fastefficientbisenet_hgnetv2_b6  import FastEfficientBiSeNet_HGNetV2_B6
+from .fastefficientbisenet_inceptionnext_tiny  import FastEfficientBiSeNet_InceptionNeXt_Tiny
+from .fastefficientbisenet_inceptionnext_tiny_pro  import FastEfficientBiSeNet_InceptionNeXt_Tiny_Pro
 
 #fastefficientformerseg
 from .fastefficientformerseg_efficientnetv2_b3 import FastEfficientFormerSeg_EfficientNetV2_B3
@@ -176,4 +178,6 @@ model_factory = {
     'dinov3segnet_vit_b': DinoV3SegNet_Vit_B,
     'fastefficientbisenet_hgnetv2_b6': FastEfficientBiSeNet_HGNetV2_B6,
     'proseg_hgnetv2_b6': ProSeg_HGNetV2_B6,
+    'fastefficientbisenet_inceptionnext_tiny': FastEfficientBiSeNet_InceptionNeXt_Tiny,
+    'fastefficientbisenet_inceptionnext_tiny_pro': FastEfficientBiSeNet_InceptionNeXt_Tiny_Pro,
 }

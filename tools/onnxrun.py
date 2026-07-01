@@ -6,7 +6,7 @@ from PIL import Image
 import cv2
 
 #路径配置
-onnx_path=r'./onnx/best-smi.onnx'
+onnx_path=r'./onnx/best_fp16.onnx'
 pic_path=r'./onnx/11.jpg'
 w,h=512,512
 
@@ -34,6 +34,7 @@ session = ort.InferenceSession(onnx_path,providers=['CPUExecutionProvider'])
 #输入图像预处理
 img=Image.open(pic_path).resize((w,h))
 imgbak=img.copy()
+img=np.array(img)
 img=np.array(img).astype(np.float32)  # 注意输入type一定要np.float32
 img-=mean                             #减均值
 img/=std                              #除方差

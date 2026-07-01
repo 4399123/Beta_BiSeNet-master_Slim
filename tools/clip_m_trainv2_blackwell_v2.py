@@ -56,7 +56,7 @@ def parse_args():
     # parse.add_argument('--config', dest='config', type=str,
     #         default='../configs/bisenetv1_blueface_caformer_s36.py',)
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/fastefficientbisenet_blueface_starnet_s1.py', )
+                       default='../configs/fastefficientbisenet_blueface_inceptionnext_tiny_pro.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
     parse.add_argument('--scale-epochs-with-world-size', dest='scale_epochs',
@@ -88,6 +88,17 @@ def set_model(lb_ignore=255):
     net.cuda()
     net.train()
 
+    # loss_opt 说明:
+    # 0: OhemCELoss
+    # 1: DiceWithOhemCELoss
+    # 2: DiceWithFocalLoss
+    # 3: OhemWithIoULoss
+    # 4: OhemWithFocalLoss
+    # 5: DiceBCELoss
+    # 6: GDiceWithOhemCELoss
+    # 7: LogCoshDiceLossWithOhemCELoss
+    # 8: LogCoshDiceOhemLovaszLoss
+    # 9: FocalTverskyWithOhemCELoss (推荐工业质检: alpha=0.3 beta=0.7 偏重漏检惩罚)
     loss_opt = 0
 
     criteria_pre = 0
@@ -119,6 +130,12 @@ def set_model(lb_ignore=255):
     elif (loss_opt == 8):
         criteria_pre = LogCoshDiceOhemLovaszLoss()
         criteria_aux = [LogCoshDiceOhemLovaszLoss() for _ in range(cfg.num_aux_heads)]
+    elif (loss_opt == 9):
+        criteria_pre = FocalTverskyWithOhemCELoss(ignore_index=lb_ignore, alpha=0.3, beta=0.7,
+                                                  gamma=1.33, tversky_weight=1.0, ohem_weight=1.0)
+        criteria_aux = [FocalTverskyWithOhemCELoss(ignore_index=lb_ignore, alpha=0.3, beta=0.7,
+                                                   gamma=1.33, tversky_weight=1.0, ohem_weight=1.0)
+                        for _ in range(cfg.num_aux_heads)]
     else:
         print('no such loss !!!')
 
@@ -290,6 +307,15 @@ def train(writer):
             # clip
             scaler.unscale_(optim)
             torch.nn.utils.clip_grad_norm_(net.parameters(), max_norm=5, norm_type=2)
+
+            # nan/inf 防线: 一旦 loss 异常, 跳过本次参数更新, 避免污染整个模型权重。
+            # scaler.step 内部对 inf 梯度会自动跳过, 但 nan loss 仍需显式拦截。
+            if not torch.isfinite(loss):
+                logger.warning(
+                    'non-finite loss detected at epoch {}, iter {}, skip this step'.format(epoch, it))
+                scaler.update()
+                optim.zero_grad(set_to_none=True)
+                continue
 
             scaler.step(optim)
             scaler.update()

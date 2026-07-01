@@ -37,9 +37,9 @@ torch.set_grad_enabled(False)
 def main():
     parse = argparse.ArgumentParser()
     parse.add_argument('--config', dest='config', type=str,
-                       default= '../configs/fastefficientbisenet_blueface_mambaout_femto.py'),
+                       default= '../configs/dinov3segnet_blueface_vit_b.py'),
     parse.add_argument('--weight-path', dest='weight_pth', type=str,
-                       default='../pt/fastefficientbisenet_mambaout_femto.pt')
+                       default='../pt/dinov3segnet_vit_b.pt')
     parse.add_argument('--outpath', dest='out_pth', type=str,
                        default='./onnx/best.onnx')
     parse.add_argument('--ousmitpath', dest='outsmi_pth', type=str,

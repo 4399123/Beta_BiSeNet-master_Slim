@@ -16,9 +16,9 @@ torch.set_grad_enabled(False)
 
 parse = argparse.ArgumentParser()
 parse.add_argument('--config', dest='config', type=str,
-                   default='../configs/fastefficientbisenet_blueface_inceptionnext_atto.py'),
+                   default='../configs/fastefficientbisenet_blueface_inceptionnext_tiny.py'),
 parse.add_argument('--weight-path', dest='weight_pth', type=str,
-                   default='../pt/fastefficientbisenet_inceptionnext_atto.pt')
+                   default='../pt/fastefficientbisenet_inceptionnext_tiny.pt')
 parse.add_argument('--outpath', dest='out_pth', type=str,
                    default='./onnx/best.onnx')
 parse.add_argument('--ousmitpath', dest='outsmi_pth', type=str,
@@ -40,7 +40,8 @@ reparameterize_model(net)
 
 
 #  dummy_input = torch.randn(1, 3, *cfg.crop_size)
-dummy_input = torch.randn(1, 3, 512, 512)
+# dummy_input = torch.randint(0, 256, (1, 3, 512, 512), dtype=torch.uint8)
+dummy_input = torch.randint(0, 256, (1, 3, 512, 512), dtype=torch.float32)
 # input_name = ['input']
 # output_name = ['eval',]
 input_name = 'input'

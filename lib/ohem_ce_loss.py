@@ -12,16 +12,21 @@ class OhemCELoss(nn.Module):
 
     def __init__(self, thresh, lb_ignore=255):
         super(OhemCELoss, self).__init__()
-        self.thresh = -torch.log(torch.tensor(thresh, requires_grad=False, dtype=torch.float)).cuda()
+        # Bug fix 1: 不在 __init__ 里 .cuda()，避免 DDP 多卡时固化到 cuda:0
+        # 只保存原始 float 值，forward 里按 logits.device 动态创建
+        self.thresh_val = float(-torch.log(torch.tensor(thresh, dtype=torch.float)).item())
         self.lb_ignore = lb_ignore
         # self.weight_CE = torch.FloatTensor([1, 22, 11265, 2606,520,8602,150,423]).to('cuda')
         # self.criteria = nn.CrossEntropyLoss(ignore_index=lb_ignore, reduction='none',weight=self.weight_CE)
         self.criteria = nn.CrossEntropyLoss(ignore_index=lb_ignore, reduction='none')
 
     def forward(self, logits, labels):
-        n_min = labels[labels != self.lb_ignore].numel() // 16
+        # Bug fix 1: thresh 跟随 logits 的设备，避免跨设备比较报错
+        thresh = torch.tensor(self.thresh_val, dtype=torch.float, device=logits.device)
+        # Bug fix 2: n_min 至少为 1，防止全 ignore batch 时 topk(0) 返回空张量导致 nan
+        n_min = max(labels[labels != self.lb_ignore].numel() // 16, 1)
         loss = self.criteria(logits, labels).view(-1)
-        loss_hard = loss[loss > self.thresh]
+        loss_hard = loss[loss > thresh]
         if loss_hard.numel() < n_min:
             loss_hard, _ = loss.topk(n_min)
         return torch.mean(loss_hard)
@@ -83,7 +88,8 @@ class DiceLoss(nn.Module):
         num = targets.size(0)
         smooth = 1.
 
-        probs = torch.sigmoid(logits)
+        # probs = torch.sigmoid(logits)
+        probs = torch.softmax(logits, dim=1)
         m1 = probs.contiguous().view(num, -1)
         m2 = targets.contiguous().view(num, -1)
         intersection = (m1 * m2)
@@ -272,7 +278,7 @@ def flatten(input, target, ignore_index):
 
 
 class FocalTverskyLoss(nn.Module):
-    def __init__(self, ignore_index=255, smooth=1.0, alpha=0.5, beta=0.5, gamma=1):
+    def __init__(self, ignore_index=255, smooth=1.0, alpha=0.3, beta=0.7, gamma=1.33):
         super(FocalTverskyLoss, self).__init__()
         self.ignore_index = ignore_index
         self.smooth = smooth
@@ -282,18 +288,29 @@ class FocalTverskyLoss(nn.Module):
 
     def forward(self, input, target):
         input, target = flatten(input, target, self.ignore_index)
-        input = softmax(input, dim=1)
+        # 用 fp32 计算，数值更稳（即使关闭 AMP 也无副作用）
+        input = softmax(input.float(), dim=1)
         num_classes = input.size(1)
+        n_valid = input.size(0)  # 有效像素总数（已过滤 ignore）
+        if n_valid == 0:
+            return input.sum() * 0.0  # 全 ignore batch，返回 0 梯度
+
         losses = []
         for c in range(num_classes):
             target_c = (target == c).float()
             input_c = input[:, c]
 
-            t_p = (input_c * target_c).sum()
-            f_p = ((1 - target_c) * input_c).sum()
-            f_n = (target_c * (1 - input_c)).sum()
+            # 归一化到 [0,1] 区间：除以有效像素数，消除分辨率对量级的影响
+            t_p = (input_c * target_c).sum() / n_valid
+            f_p = ((1 - target_c) * input_c).sum() / n_valid
+            f_n = (target_c * (1 - input_c)).sum() / n_valid
+
             tversky = (t_p + self.smooth) / (t_p + self.alpha * f_p + self.beta * f_n + self.smooth)
-            focal_tversky = (1 - tversky) ** self.gamma
+            # gamma>=1 时 u^gamma 的导数 gamma*u^(gamma-1) 在 u=(1-tversky)→0 处有界,
+            # 从数学上根除了 gamma<1 时的梯度奇点(后期模型高度自信会触发 nan)。
+            # clamp 仅作防御性保护, 杜绝极端浮点情况下的负底数。
+            one_minus_tversky = (1.0 - tversky).clamp(min=0.0, max=1.0)
+            focal_tversky = one_minus_tversky ** self.gamma
             losses.append(focal_tversky)
 
         losses = torch.stack(losses)
@@ -301,14 +318,22 @@ class FocalTverskyLoss(nn.Module):
         return loss
 
 class FocalTverskyWithOhemCELoss(nn.Module):
-    def __init__(self):
+    def __init__(self, ignore_index=255, thresh=0.7,
+                 alpha=0.3, beta=0.7, gamma=1.33, smooth=1.0,
+                 tversky_weight=1.0, ohem_weight=1.0):
         super(FocalTverskyWithOhemCELoss, self).__init__()
-        self.ft_loss =FocalTverskyLoss ()
-        self.ohem_loss = OhemCELoss(0.7)
+        self.ft_loss = FocalTverskyLoss(
+            ignore_index=ignore_index, smooth=smooth,
+            alpha=alpha, beta=beta, gamma=gamma
+        )
+        self.ohem_loss = OhemCELoss(thresh, lb_ignore=ignore_index)
+        self.tversky_weight = tversky_weight
+        self.ohem_weight = ohem_weight
+
     def forward(self, preds, targets):
         ohemloss = self.ohem_loss(preds, targets)
-        gdiceloss = self.ft_loss(preds, targets)
-        return ohemloss + gdiceloss
+        ft_loss = self.ft_loss(preds, targets)
+        return self.ohem_weight * ohemloss + self.tversky_weight * ft_loss
 
 
 

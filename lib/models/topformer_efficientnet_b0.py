@@ -323,6 +323,22 @@ class TopFormer_EfficientNet_B0(nn.Module):
     def forward(self, x):
         with autocast(enabled=self.use_fp16):
             B, C, H, W = x.shape
+
+            if (self.aux_mode == 'pred'):
+                x = x.float()
+                # # 如果是单通道输入，复制为3通道
+                # if x.size(1) == 1:
+                #     x = x.repeat(1, 3, 1, 1)
+
+                x=torch.flip(x, dims=[1])
+
+                # 定义均值和方差
+                mean = torch.tensor([120.0, 114.0, 104.0]).view(1, 3, 1, 1)
+                std = torch.tensor([70.0, 69.0, 73.0]).view(1, 3, 1, 1)
+
+                # 归一化：(x - mean) / std
+                x = (x - mean) / std
+
             x = self.backbone(x)
             xx = x[0]
             for i in x[1:]:
@@ -334,6 +350,8 @@ class TopFormer_EfficientNet_B0(nn.Module):
             elif(self.aux_mode=='pred'):
                 feat_out = torch.argmax(out, dim=1)
                 feat_out = torch.tensor(feat_out, dtype=torch.float32)
+                feat_out = feat_out[:, None, :, :]
+
                 return feat_out
             else:
                 return out

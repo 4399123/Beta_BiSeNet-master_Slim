@@ -6,12 +6,22 @@
   <component name="ChangeListManager">
     <list default="true" id="af36840f-6835-49f5-a8d1-87d380c427c8" name="更改" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_hgnetv2_b6.py" beforeDir="false" afterPath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_hgnetv2_b6.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_inceptionnext_atto.py" beforeDir="false" afterPath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_inceptionnext_atto.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_mambaout_femto.py" beforeDir="false" afterPath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_mambaout_femto.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/configs/proseg_blueface_hgnetv2_b6.py" beforeDir="false" afterPath="$PROJECT_DIR$/configs/proseg_blueface_hgnetv2_b6.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/docker_use.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docker_use.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/get_dataloader.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/get_dataloader.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/data/sampler.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/data/sampler.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/models/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/__init__.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/models/bisenetv1_inceptionnext_tiny.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/bisenetv1_inceptionnext_tiny.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/models/fastefficientbisenet_shvit_s1.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/fastefficientbisenet_shvit_s1.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/models/fastefficientbisenet_starnet_s1.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/fastefficientbisenet_starnet_s1.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/models/fastefficientbisenet_swiftformer_xs.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/fastefficientbisenet_swiftformer_xs.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/models/inceptionnext_tiny.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/inceptionnext_tiny.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/models/topformer_efficientnet_b0.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/topformer_efficientnet_b0.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/ohem_ce_loss.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/ohem_ce_loss.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell_v2.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell_v2.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tools/export_onnx.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tools/export_onnx_新方案.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx_新方案.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tools/onnxrun.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/onnxrun.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/测试数据.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/测试数据.xlsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -38,7 +48,10 @@
     &quot;Python.export_onnx_fp16.executor&quot;: &quot;Run&quot;,
     &quot;Python.export_onnx_新方案.executor&quot;: &quot;Run&quot;,
     &quot;Python.fastefficientbisenet_hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_inceptionnext_tiny.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_inceptionnext_tiny_pro.executor&quot;: &quot;Run&quot;,
     &quot;Python.hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;Python.inceptionnext_tiny.executor&quot;: &quot;Run&quot;,
     &quot;Python.onnxrun.executor&quot;: &quot;Run&quot;,
     &quot;Python.proseg_hgnetv2_b6.executor&quot;: &quot;Run&quot;,
     &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
@@ -52,8 +65,8 @@
       <recent name="D:\F\ABlueFaceProj\20240618\Seg\Beta_BiSeNet-master_Slim\configs" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.fastefficientbisenet_hgnetv2_b6">
-    <configuration name="export_onnx_新方案" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+  <component name="RunManager" selected="Python.onnxrun">
+    <configuration name="export_onnx" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Beta_BiSeNet-master_Slim" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -66,7 +79,7 @@
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tools/export_onnx_新方案.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tools/export_onnx.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -75,7 +88,29 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="fastefficientbisenet_hgnetv2_b6" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="export_onnx_fp16" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="Beta_BiSeNet-master_Slim" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tools" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tools/export_onnx_fp16.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="fastefficientbisenet_inceptionnext_tiny" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Beta_BiSeNet-master_Slim" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -88,7 +123,7 @@
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/lib/models/fastefficientbisenet_hgnetv2_b6.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/lib/models/fastefficientbisenet_inceptionnext_tiny.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -97,7 +132,7 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="hgnetv2_b6" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+    <configuration name="fastefficientbisenet_inceptionnext_tiny_pro" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Beta_BiSeNet-master_Slim" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -110,7 +145,7 @@
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/lib/models/hgnetv2_b6.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/lib/models/fastefficientbisenet_inceptionnext_tiny_pro.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -141,35 +176,13 @@
       <option name="INPUT_FILE" value="" />
       <method v="2" />
     </configuration>
-    <configuration name="proseg_hgnetv2_b6" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="Beta_BiSeNet-master_Slim" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/lib/models" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/lib/models/proseg_hgnetv2_b6.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
     <recent_temporary>
       <list>
-        <item itemvalue="Python.fastefficientbisenet_hgnetv2_b6" />
-        <item itemvalue="Python.proseg_hgnetv2_b6" />
-        <item itemvalue="Python.hgnetv2_b6" />
         <item itemvalue="Python.onnxrun" />
-        <item itemvalue="Python.export_onnx_新方案" />
+        <item itemvalue="Python.export_onnx_fp16" />
+        <item itemvalue="Python.export_onnx" />
+        <item itemvalue="Python.fastefficientbisenet_inceptionnext_tiny_pro" />
+        <item itemvalue="Python.fastefficientbisenet_inceptionnext_tiny" />
       </list>
     </recent_temporary>
   </component>
@@ -190,5 +203,16 @@
       <updated>1780999899460</updated>
     </task>
     <servers />
+  </component>
+  <component name="XDebuggerManager">
+    <breakpoint-manager>
+      <breakpoints>
+        <line-breakpoint enabled="true" suspend="THREAD" type="python-line">
+          <url>file://$PROJECT_DIR$/lib/models/inceptionnext_tiny.py</url>
+          <line>25</line>
+          <option name="timeStamp" value="1" />
+        </line-breakpoint>
+      </breakpoints>
+    </breakpoint-manager>
   </component>
 </project>

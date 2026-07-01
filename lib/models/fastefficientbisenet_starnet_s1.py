@@ -243,6 +243,7 @@ class FastEfficientBiSeNet_SatrNet_S1(nn.Module):
             elif self.aux_mode == 'pred':
                 pred = torch.argmax(logits, dim=1)
                 return  pred.float()
+                # return pred
             else:
                 raise NotImplementedError
 
