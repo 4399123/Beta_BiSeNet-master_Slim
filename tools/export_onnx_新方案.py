@@ -80,7 +80,7 @@ def main():
     torch.onnx.export(net, dummy_input, args.out_pth,
                       input_names=[input_name],
                       output_names=[output_name],
-                      verbose=False, opset_version=16,
+                      verbose=False, opset_version=18,
                       do_constant_folding=True,  # PyTorch 自带折叠
                       dynamic_axes={
                           input_name: {0: 'batch_size'},

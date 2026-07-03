@@ -56,7 +56,7 @@ def parse_args():
     # parse.add_argument('--config', dest='config', type=str,
     #         default='../configs/bisenetv1_blueface_caformer_s36.py',)
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/fastefficientbisenet_blueface_inceptionnext_tiny_pro.py', )
+                       default='../configs/fastefficientbisenet_blueface_inceptionnext_tiny_pro_max.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
     parse.add_argument('--scale-epochs-with-world-size', dest='scale_epochs',
@@ -99,7 +99,7 @@ def set_model(lb_ignore=255):
     # 7: LogCoshDiceLossWithOhemCELoss
     # 8: LogCoshDiceOhemLovaszLoss
     # 9: FocalTverskyWithOhemCELoss (推荐工业质检: alpha=0.3 beta=0.7 偏重漏检惩罚)
-    loss_opt = 0
+    loss_opt = 8
 
     criteria_pre = 0
     criteria_aux = []   # num_aux_heads=0 时保持空列表，避免后续 zip 报错
@@ -145,7 +145,7 @@ def set_model(lb_ignore=255):
 # Optimizer choice. Lifted to module level so the LR-scaling helper can pick
 # the right scaling rule (linear for SGD, sqrt for adaptive optimizers).
 # 0: AdaBelief, 1: AdamP, 2: AdamW, 3: SGD, 4: Lion, 5: Lamb
-OPTIM_OPT = 1
+OPTIM_OPT = 2
 
 
 def get_lr_scale():

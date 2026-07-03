@@ -1,0 +1,31 @@
+trtexec --onnx=convnextv1_tiny-smi.onnx --saveEngine=best.trt --workspace=3000 --fp16 --minShapes=input:1x3x512x512 --optShapes=input:1x3x512x512 --maxShapes=input:2x3x512x512
+
+
+trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x512x512 --optShapes=input:1x3x512x512 --maxShapes=input:2x3x512x512 --fp16 --workspace=3000 -–iterations=300
+
+trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x512x512 --optShapes=input:1x3x512x512 --maxShapes=input:1x3x512x512  --workspace=4096 -–iterations=100  --useCudaGraph --preview=+fasterDynamicShapes0805
+
+polygraphy surgeon sanitize best.onnx --fold-constants  -o folded.onnx
+
+onnxsim best.onnx best-sim.onnx --no-large-tensor
+
+trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x112x112 --optShapes=input:1x3x112x112 --maxShapes=input:1x3x112x112   --fp16 --workspace=3000 -–iterations=30
+
+trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --explicitBatch=24 --fp16 --workspace=3000
+
+trtexec.exe --onnx=ppliteseg-smi.onnx --saveEngine=ppliteseg-smi.engine  --minShapes=input:1x3x180x2048 --optShapes=input:1x3x180x2048 --maxShapes=input:1x3x180x2048 --fp16 --workspace=3000 -–iterations=300
+
+trtexec.exe --onnx=best-trt.onnx --saveEngine=best-trt.engine  --minShapes=input:1x3x640x640 --optShapes=input:2x3x640x640 --maxShapes=input:5x3x640x640  --workspace=4000 -–iterations=300  --useCudaGraph
+
+trtexec.exe --onnx=best-trt.onnx --saveEngine=best-trt.engine  --workspace=4000 -–iterations=300
+trtexec.exe --onnx=best-trt.onnx --saveEngine=best-trt.engine  --minShapes=input:1x3x448x448 --optShapes=input:1x3x448x448 --maxShapes=input:2x3x448x448  --workspace=4000 -–iterations=300 
+
+trtexec.exe --onnx=TuYinSegment.onnx --saveEngine=TuYinSegment.engine  --minShapes=input:1x3x704x704 --optShapes=input:1x3x704x704 --maxShapes=input:2x3x704x704  --workspace=4000 
+
+trtexec.exe --onnx=TuYinSegment.onnx --saveEngine=TuYinSegment.engine  --minShapes=input:1x3x384x384 --optShapes=input:1x3x384x384 --maxShapes=input:2x3x384x384  --workspace=4000 
+
+trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine --fp16  --workspace=4000 -–iterations=300  --useCudaGraph
+trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x640x640 --optShapes=input:1x3x640x640 --maxShapes=input:2x3x640x640  --workspace=4096 -–iterations=100  --useCudaGraph
+./trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x512x512 --optShapes=input:1x3x512x512 --maxShapes=input:2x3x512x512  --useCudaGraph --fp16
+
+./trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x48x384 --optShapes=input:1x3x48x384 --maxShapes=input:5x3x48x384 --useCudaGraph --verbose

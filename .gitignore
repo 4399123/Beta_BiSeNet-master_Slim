@@ -13,3 +13,4 @@ timm/layers/__pycache__/
 timm/models/__pycache__/
 timm/utils/__pycache__/
 lib/models/__pycache__/
+tools/trt/

@@ -162,9 +162,18 @@ class DAPPM_TRT(nn.Module):
         s2 = _safe((H // 4, W // 4))
         s3 = _safe((H // 8, W // 8))
 
+        def _fixed_pool(out_size):
+            # 全局分支若走 x.mean(dim=(2,3)) 会导出为 ONNX ReduceMean，
+            # TensorRT 解析时会丢失通道维，导致后续 BatchNorm 报
+            # "shift weights has count C but 1 was expected"。
+            # 这里改用满核 AvgPool2d，保持为标准 Pooling 节点，通道维正确。
+            if out_size == 1 or out_size == (1, 1):
+                return nn.AvgPool2d(kernel_size=(H, W))
+            return TRT_FixedAvgPool2d(input_size=(H, W), output_size=out_size)
+
         def _branch_with_pool(out_size):
             return nn.Sequential(
-                TRT_FixedAvgPool2d(input_size=(H, W), output_size=out_size),
+                _fixed_pool(out_size),
                 BatchNorm2d(in_channels),
                 nn.ReLU(inplace=True),
                 nn.Conv2d(in_channels, mid_channels, kernel_size=1, bias=False),

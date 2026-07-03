@@ -90,6 +90,7 @@ from .fastefficientbisenet_vit_s_dinov3  import FastEfficientBiSeNet_Vit_S_DinoV
 from .fastefficientbisenet_hgnetv2_b6  import FastEfficientBiSeNet_HGNetV2_B6
 from .fastefficientbisenet_inceptionnext_tiny  import FastEfficientBiSeNet_InceptionNeXt_Tiny
 from .fastefficientbisenet_inceptionnext_tiny_pro  import FastEfficientBiSeNet_InceptionNeXt_Tiny_Pro
+from .fastefficientbisenet_inceptionnext_tiny_pro_max  import FastEfficientBiSeNet_InceptionNeXt_Tiny_Pro_Max
 
 #fastefficientformerseg
 from .fastefficientformerseg_efficientnetv2_b3 import FastEfficientFormerSeg_EfficientNetV2_B3
@@ -180,4 +181,5 @@ model_factory = {
     'proseg_hgnetv2_b6': ProSeg_HGNetV2_B6,
     'fastefficientbisenet_inceptionnext_tiny': FastEfficientBiSeNet_InceptionNeXt_Tiny,
     'fastefficientbisenet_inceptionnext_tiny_pro': FastEfficientBiSeNet_InceptionNeXt_Tiny_Pro,
+    'fastefficientbisenet_inceptionnext_tiny_pro_max': FastEfficientBiSeNet_InceptionNeXt_Tiny_Pro_Max,
 }

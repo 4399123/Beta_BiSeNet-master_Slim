@@ -6,7 +6,7 @@ from PIL import Image
 import cv2
 
 #¬∑æ∂≈‰÷√
-onnx_path=r'./onnx/best_fp16.onnx'
+onnx_path=r'./onnx/best-smi.onnx'
 pic_path=r'./onnx/11.jpg'
 w,h=512,512
 
