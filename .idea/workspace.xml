@@ -6,32 +6,8 @@
   <component name="ChangeListManager">
     <list default="true" id="af36840f-6835-49f5-a8d1-87d380c427c8" name="更改" comment="">
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/models/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/models/fastefficientbisenet_inceptionnext_atto.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/fastefficientbisenet_inceptionnext_atto.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/models/fastefficientbisenet_inceptionnext_tiny_pro.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/fastefficientbisenet_inceptionnext_tiny_pro.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/arcface_train.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/batch_image_rotation.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/ceshi.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell_v2.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell_v2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/d_train.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/diou_nms.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/evaluate_bak.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/evaluate_cpu.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/evaluate_gpu.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/export_onnx.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/export_onnx_新方案.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx_新方案.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/m_train.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/m_train_bak.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/model_time.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/model_time2.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/model_time3.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/onnxrun.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/onnxrun.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/s_train.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/train_amp.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/train_aux.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/train_aux4.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/train_lightning.py" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/train_lightning_bak.py" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/docker_use.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docker_use.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/lib/models/fastefficientbisenet_inceptionnext_tiny_pro_max.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/fastefficientbisenet_inceptionnext_tiny_pro_max.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/测试数据.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/测试数据.xlsx" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
@@ -51,35 +27,35 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
-  <component name="PropertiesComponent"><![CDATA[{
-  "keyToString": {
-    "Python.diagnose_fp16.executor": "Run",
-    "Python.export_onnx.executor": "Run",
-    "Python.export_onnx_fp16.executor": "Run",
-    "Python.export_onnx_新方案.executor": "Run",
-    "Python.fastefficientbisenet_hgnetv2_b6.executor": "Run",
-    "Python.fastefficientbisenet_inceptionnext_tiny.executor": "Run",
-    "Python.fastefficientbisenet_inceptionnext_tiny_pro.executor": "Run",
-    "Python.fastefficientbisenet_inceptionnext_tiny_pro_max.executor": "Run",
-    "Python.hgnetv2_b6.executor": "Run",
-    "Python.inceptionnext_tiny.executor": "Run",
-    "Python.mask_classification_decoder_demo.executor": "Debug",
-    "Python.onnxrun.executor": "Run",
-    "Python.proseg_hgnetv2_b6.executor": "Run",
-    "Python.trtrun.executor": "Run",
-    "RunOnceActivity.ShowReadmeOnStart": "true",
-    "RunOnceActivity.git.unshallow": "true",
-    "git-widget-placeholder": "main",
-    "last_opened_file_path": "D:/F/ABlueFaceProj/20240618/Seg/Beta_BiSeNet-master_Slim/configs",
-    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.diagnose_fp16.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx_fp16.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx_新方案.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_inceptionnext_tiny.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_inceptionnext_tiny_pro.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_inceptionnext_tiny_pro_max.executor&quot;: &quot;Run&quot;,
+    &quot;Python.hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;Python.inceptionnext_tiny.executor&quot;: &quot;Run&quot;,
+    &quot;Python.mask_classification_decoder_demo.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.onnxrun.executor&quot;: &quot;Run&quot;,
+    &quot;Python.proseg_hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;Python.trtrun.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/F/ABlueFaceProj/20240618/Seg/Beta_BiSeNet-master_Slim/configs&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
   }
-}]]></component>
+}</component>
   <component name="RecentsManager">
     <key name="CopyFile.RECENT_KEYS">
       <recent name="D:\F\ABlueFaceProj\20240618\Seg\Beta_BiSeNet-master_Slim\configs" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.trtrun">
+  <component name="RunManager" selected="Python.fastefficientbisenet_inceptionnext_tiny_pro_max">
     <configuration name="export_onnx" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Beta_BiSeNet-master_Slim" />
       <option name="ENV_FILES" value="" />
@@ -192,11 +168,11 @@
     </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.fastefficientbisenet_inceptionnext_tiny_pro_max" />
         <item itemvalue="Python.trtrun" />
         <item itemvalue="Python.onnxrun" />
         <item itemvalue="Python.export_onnx_fp16" />
         <item itemvalue="Python.export_onnx" />
-        <item itemvalue="Python.fastefficientbisenet_inceptionnext_tiny_pro_max" />
       </list>
     </recent_temporary>
   </component>

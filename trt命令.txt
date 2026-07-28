@@ -29,3 +29,5 @@ trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input
 ./trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x512x512 --optShapes=input:1x3x512x512 --maxShapes=input:2x3x512x512  --useCudaGraph --fp16
 
 ./trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x48x384 --optShapes=input:1x3x48x384 --maxShapes=input:5x3x48x384 --useCudaGraph --verbose
+
+./trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x112x112 --optShapes=input:1x3x112x112 --maxShapes=input:2x3x112x112  --useCudaGraph --fp16
