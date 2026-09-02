@@ -10,15 +10,14 @@ from configs import set_cfg_from_file
 import onnx
 from onnxsim import simplify
 import onnxoptimizer
-from utils_zl import replace_batchnorm
 from timm.utils import reparameterize_model
 torch.set_grad_enabled(False)
 
 parse = argparse.ArgumentParser()
 parse.add_argument('--config', dest='config', type=str,
-                   default='../configs/fastefficientbisenet_blueface_inceptionnext_atto.py'),
+                   default='../configs/fastefficientbisenet_blueface_cpubone_nano_reparam.py'),
 parse.add_argument('--weight-path', dest='weight_pth', type=str,
-                   default='../pt/fastefficientbisenet_inceptionnext_atto.pt')
+                   default='../pt/fastefficientbisenet_cpubone_nano.pt')
 parse.add_argument('--outpath', dest='out_pth', type=str,
                    default='./onnx/best.onnx')
 parse.add_argument('--ousmitpath', dest='outsmi_pth', type=str,
@@ -35,8 +34,8 @@ net = model_factory[cfg.model_type](cfg.n_cats, aux_mode=args.aux_mode,use_fp16=
 net.load_state_dict(torch.load(args.weight_pth, map_location='cpu'), strict=False)
 net.eval()
 
-replace_batchnorm(net)
-reparameterize_model(net)
+
+net=reparameterize_model(net)
 
 
 #  dummy_input = torch.randn(1, 3, *cfg.crop_size)
@@ -46,6 +45,8 @@ dummy_input = torch.randint(0, 256, (1, 3, 512, 512), dtype=torch.float32)
 # output_name = ['eval',]
 input_name = 'input'
 output_name = 'output'
+
+
 
 torch.onnx.export(net, dummy_input, args.out_pth,
     input_names=[input_name],

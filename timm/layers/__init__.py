@@ -15,10 +15,10 @@ from .adaptive_avgmax_pool import (
     AdaptiveAvgMaxPool2d,
     SelectAdaptivePool2d,
 )
-from .attention import Attention, AttentionRope, maybe_add_mask
+from .attention import Attention, AttentionRope, maybe_add_mask, resolve_self_attn_mask
 from .attention2d import MultiQueryAttention2d, Attention2d, MultiQueryAttentionV2
-from .attention_pool import AttentionPoolLatent
-from .attention_pool2d import AttentionPool2d, RotAttentionPool2d, RotaryEmbedding
+from .attention_pool import AttentionPoolLatent, AttentionPoolPrr
+from .attention_pool2d import AttentionPool2d, RotAttentionPool2d
 from .blur_pool import BlurPool2d, create_aa
 from .classifier import create_classifier, ClassifierHead, NormMlpClassifierHead, ClNormMlpClassifierHead
 from .cond_conv2d import CondConv2d, get_condconv_initializer
@@ -42,7 +42,8 @@ from .create_attn import get_attn, create_attn
 from .create_conv2d import create_conv2d
 from .create_norm import get_norm_layer, create_norm_layer
 from .create_norm_act import get_norm_act_layer, create_norm_act_layer, get_norm_act_layer
-from .drop import DropBlock2d, DropPath, drop_block_2d, drop_path
+from .diff_attention import DiffAttention
+from .drop import DropBlock2d, DropPath, drop_block_2d, drop_path, calculate_drop_path_rates
 from .eca import EcaModule, CecaModule, EfficientChannelAttn, CircularEfficientChannelAttn
 from .evo_norm import (
     EvoNorm2dB0,
@@ -107,6 +108,7 @@ from .padding import get_padding, get_same_padding, pad_same
 from .patch_dropout import PatchDropout, PatchDropoutWithIndices, patch_dropout_forward
 from .patch_embed import PatchEmbed, PatchEmbedWithSize, PatchEmbedInterpolator, resample_patch_embed
 from .pool1d import global_pool_nlc
+from .other_pool import LsePlus2d, LsePlus1d, SimPool2d, SimPool1d
 from .pool2d_same import AvgPool2dSame, create_pool2d
 from .pos_embed import resample_abs_pos_embed, resample_abs_pos_embed_nhwc
 from .pos_embed_rel import (
@@ -133,6 +135,7 @@ from .pos_embed_sincos import (
     RotaryEmbedding,
     RotaryEmbeddingCat,
     RotaryEmbeddingMixed,
+    RotaryEmbeddingMRope,
     RotaryEmbeddingDinoV3,
     get_mixed_freqs,
     create_rope_embed,
@@ -148,6 +151,7 @@ from .test_time_pool import TestTimePoolHead, apply_test_time_pool
 from .trace_utils import _assert, _float_to_int
 from .typing import LayerType, PadType, disable_compiler
 from .weight_init import (
+    is_meta_device,
     trunc_normal_,
     trunc_normal_tf_,
     variance_scaling_,

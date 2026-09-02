@@ -18,7 +18,15 @@ from torch import nn as nn
 class GlobalResponseNorm(nn.Module):
     """ Global Response Normalization layer
     """
-    def __init__(self, dim, eps=1e-6, channels_last=True):
+    def __init__(
+            self,
+            dim: int,
+            eps: float = 1e-6,
+            channels_last: bool = True,
+            device=None,
+            dtype=None,
+    ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         self.eps = eps
         if channels_last:
@@ -30,8 +38,8 @@ class GlobalResponseNorm(nn.Module):
             self.channel_dim = 1
             self.wb_shape = (1, -1, 1, 1)
 
-        self.weight = nn.Parameter(torch.zeros(dim))
-        self.bias = nn.Parameter(torch.zeros(dim))
+        self.weight = nn.Parameter(torch.zeros(dim, **dd))
+        self.bias = nn.Parameter(torch.zeros(dim, **dd))
 
     def forward(self, x):
         x_g = x.norm(p=2, dim=self.spatial_dim, keepdim=True)

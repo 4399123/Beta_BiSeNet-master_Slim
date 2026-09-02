@@ -8,6 +8,7 @@ This file contains a number of ViT variants the utilise ROPE position embeddings
  * Perception Encoder (PE) ViT from Meta (https://arxiv.org/abs/2504.13181)
  * ROPE-ViT from Naver AI (https://arxiv.org/abs/2403.13298)
  * DINOv3 from META AI Research (https://arxiv.org/abs/2508.10104)
+ * LingBot-Vision from Robbyant (https://arxiv.org/abs/2607.05247)
 
 @article{EVA,
   title={EVA: Exploring the Limits of Masked Visual Representation Learning at Scale},
@@ -55,8 +56,17 @@ EVA-02: A Visual Representation for Neon Genesis - https://arxiv.org/abs/2303.11
   url={https://arxiv.org/abs/2508.10104},
 }
 
+@article{lingbot-vision2026,
+  title={Vision Pretraining for Dense Spatial Perception},
+  author={Fu, Zelin and Tan, Bin and Sun, Changjiang and Liu, Shaohui and Zheng, Kecheng and Xu, Yinghao
+    and Zhu, Xing and Shen, Yujun and Xue, Nan},
+  journal={arXiv preprint arXiv:2607.05247},
+  year={2026}
+}
+
 DINOv3 code was a modification of existing EVA model and support modules, so licensed under Apache-2.0 like timm.
 Weights from META remain under DINOv3 License (https://ai.meta.com/resources/models-and-libraries/dinov3-license/).
+LingBot-Vision code and weights are released under Apache-2.0 (https://github.com/robbyant/lingbot-vision).
 
 Modifications by / Copyright 2023 Ross Wightman, original copyrights below
 """
@@ -78,7 +88,7 @@ from timm.layers import (
     GluMlp,
     SwiGLU,
     LayerNorm,
-    DropPath,
+    DropPath, calculate_drop_path_rates,
     PatchDropoutWithIndices,
     create_rope_embed,
     apply_rot_embed_cat,
@@ -90,6 +100,7 @@ from timm.layers import (
     to_2tuple,
     use_fused_attn,
     maybe_add_mask,
+    resolve_self_attn_mask,
     AttentionRope,
     AttentionPoolLatent,
 )
@@ -121,6 +132,9 @@ class EvaAttention(nn.Module):
             qk_norm: bool = False,
             scale_norm: bool = True,
             rotate_half: bool = False,
+            gated: bool = False,
+            device=None,
+            dtype=None,
     ):
         """
         Args:
@@ -139,47 +153,65 @@ class EvaAttention(nn.Module):
             scale_norm: Enable normalization (scaling) of attention output with norm_layer
             rotate_half: Use half rotation layout instead of interleaved
         """
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         if scale_norm or qk_norm:
             assert norm_layer is not None, 'norm_layer must be provided if qk_norm or scale_norm is True'
         self.num_heads = num_heads
-        head_dim = dim // num_heads
+        self.head_dim = dim // num_heads
         if attn_head_dim is not None:
-            head_dim = attn_head_dim
-        attn_dim = head_dim * self.num_heads
-        self.scale = head_dim ** -0.5
+            self.head_dim = attn_head_dim
+        attn_dim = self.head_dim * self.num_heads
+        self.scale = self.head_dim ** -0.5
         self.num_prefix_tokens = num_prefix_tokens
         self.fused_attn = use_fused_attn()
         self.qkv_bias_separate = qkv_bias_separate
         self.rotate_half = rotate_half
 
         if qkv_fused:
-            self.qkv = nn.Linear(dim, attn_dim * 3, bias=False)
+            self.qkv = nn.Linear(dim, attn_dim * 3, bias=False, **dd)
             self.q_proj = self.k_proj = self.v_proj = None
             if qkv_bias:
-                self.q_bias = nn.Parameter(torch.zeros(attn_dim))
-                self.register_buffer('k_bias', torch.zeros(attn_dim), persistent=False)
-                self.v_bias = nn.Parameter(torch.zeros(attn_dim))
+                self.q_bias = nn.Parameter(torch.empty(attn_dim, **dd))
+                self.register_buffer('k_bias', torch.empty(attn_dim, **dd), persistent=False)
+                self.v_bias = nn.Parameter(torch.empty(attn_dim, **dd))
             else:
                 self.q_bias = self.k_bias = self.v_bias = None
         else:
-            self.q_proj = nn.Linear(dim, attn_dim, bias=qkv_bias)
-            self.k_proj = nn.Linear(dim, attn_dim, bias=False)
-            self.v_proj = nn.Linear(dim, attn_dim, bias=qkv_bias)
+            self.q_proj = nn.Linear(dim, attn_dim, bias=qkv_bias, **dd)
+            self.k_proj = nn.Linear(dim, attn_dim, bias=False, **dd)
+            self.v_proj = nn.Linear(dim, attn_dim, bias=qkv_bias, **dd)
             self.qkv = None
             self.q_bias = self.k_bias = self.v_bias = None
-        self.q_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
-        self.k_norm = norm_layer(self.head_dim) if qk_norm else nn.Identity()
+        self.q_norm = norm_layer(self.head_dim, **dd) if qk_norm else nn.Identity()
+        self.k_norm = norm_layer(self.head_dim, **dd) if qk_norm else nn.Identity()
         self.attn_drop = nn.Dropout(attn_drop)
-        self.norm = norm_layer(attn_dim) if scale_norm else nn.Identity()
-        self.proj = nn.Linear(attn_dim, dim)
+        self.norm = norm_layer(attn_dim, **dd) if scale_norm else nn.Identity()
+        self.gate = nn.Linear(dim, attn_dim, bias=qkv_bias, **dd) if gated else None
+        self.proj = nn.Linear(attn_dim, dim, **dd)
         self.proj_drop = nn.Dropout(proj_drop)
+
+        # TODO: skip init when on meta device when safe to do so
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize parameters and buffers."""
+        if self.q_bias is not None:
+            nn.init.zeros_(self.q_bias)
+            nn.init.zeros_(self.v_bias)
+        self._init_buffers()
+
+    def _init_buffers(self) -> None:
+        """Compute and fill non-persistent buffer values."""
+        if self.k_bias is not None:
+            self.k_bias.zero_()
 
     def forward(
             self,
             x,
             rope: Optional[torch.Tensor] = None,
             attn_mask: Optional[torch.Tensor] = None,
+            is_causal: bool = False,
     ):
         """Forward pass for the attention module.
 
@@ -187,11 +219,13 @@ class EvaAttention(nn.Module):
             x: Input tensor of shape (batch_size, sequence_length, embedding_dim)
             rope: Rotary position embeddings tensor for position-aware attention
             attn_mask: Optional attention mask to apply during attention computation
+            is_causal: If True, use causal (autoregressive) masking
 
         Returns:
             Tensor of shape (batch_size, sequence_length, embedding_dim)
         """
         B, N, C = x.shape
+        gate = self.gate(x).sigmoid() if self.gate is not None else None
 
         if self.qkv is not None:
             if self.q_bias is None:
@@ -223,21 +257,28 @@ class EvaAttention(nn.Module):
                 q, k, v,
                 attn_mask=attn_mask,
                 dropout_p=self.attn_drop.p if self.training else 0.,
+                is_causal=is_causal,
             )
         else:
             q = q * self.scale
-            attn = (q @ k.transpose(-2, -1))
-            attn = maybe_add_mask(attn, attn_mask)
+            attn = q @ k.transpose(-2, -1)
+            attn_bias = resolve_self_attn_mask(N, attn, attn_mask, is_causal=is_causal)
+            attn = maybe_add_mask(attn, attn_bias)
             attn = attn.softmax(dim=-1)
-
             attn = self.attn_drop(attn)
             x = attn @ v
 
         x = x.transpose(1, 2).reshape(B, N, C)
         x = self.norm(x)
+        if gate is not None:
+            x = x * gate
         x = self.proj(x)
         x = self.proj_drop(x)
         return x
+
+    def init_non_persistent_buffers(self) -> None:
+        """Initialize non-persistent buffers."""
+        self._init_buffers()
 
 
 class EvaBlock(nn.Module):
@@ -256,6 +297,7 @@ class EvaBlock(nn.Module):
             num_prefix_tokens: int = 1,
             attn_type: str = 'eva',
             rotate_half: bool = False,
+            gated_attn: bool = False,
             proj_drop: float = 0.,
             attn_drop: float = 0.,
             drop_path: float = 0.,
@@ -263,6 +305,8 @@ class EvaBlock(nn.Module):
             act_layer: Callable = nn.GELU,
             norm_layer: Callable = LayerNorm,
             attn_head_dim: Optional[int] = None,
+            device=None,
+            dtype=None,
             **kwargs,
     ):
         """ Initialize the EVA transformer block.
@@ -286,8 +330,10 @@ class EvaBlock(nn.Module):
             norm_layer: Normalization layer constructor
             attn_head_dim: Dimension of each attention head (if None, computed as dim // num_heads)
         """
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
-        self.norm1 = norm_layer(dim)
+
+        self.norm1 = norm_layer(dim, **dd)
         attn_cls = AttentionRope if attn_type == 'rope' else EvaAttention
         self.attn = attn_cls(
             dim,
@@ -301,11 +347,14 @@ class EvaBlock(nn.Module):
             norm_layer=norm_layer,
             scale_norm=scale_attn_inner,
             rotate_half=rotate_half,
+            gated=gated_attn,
+            **dd,
         )
-        self.gamma_1 = nn.Parameter(init_values * torch.ones(dim)) if init_values is not None else None
+        self.init_values = init_values
+        self.gamma_1 = nn.Parameter(torch.empty(dim, **dd)) if init_values is not None else None
         self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
-        self.norm2 = norm_layer(dim)
+        self.norm2 = norm_layer(dim, **dd)
         hidden_features = int(dim * mlp_ratio)
         if swiglu_mlp:
             if scale_mlp or swiglu_align_to:
@@ -316,6 +365,7 @@ class EvaBlock(nn.Module):
                     norm_layer=norm_layer if scale_mlp else None,
                     drop=proj_drop,
                     align_to=swiglu_align_to,
+                    **dd,
                 )
             else:
                 # w/o any extra norm, an impl with packed weights is used
@@ -326,6 +376,7 @@ class EvaBlock(nn.Module):
                     act_layer=nn.SiLU,
                     gate_last=False,
                     drop=proj_drop,
+                    **dd,
                 )
         else:
             self.mlp = Mlp(
@@ -334,21 +385,32 @@ class EvaBlock(nn.Module):
                 act_layer=act_layer,
                 norm_layer=norm_layer if scale_mlp else None,
                 drop=proj_drop,
+                **dd,
             )
-        self.gamma_2 = nn.Parameter(init_values * torch.ones(dim)) if init_values is not None else None
+        self.gamma_2 = nn.Parameter(torch.empty(dim, **dd)) if init_values is not None else None
         self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+
+        # TODO: skip init when on meta device when safe to do so
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize parameters."""
+        if self.gamma_1 is not None:
+            nn.init.constant_(self.gamma_1, self.init_values)
+            nn.init.constant_(self.gamma_2, self.init_values)
 
     def forward(
             self,
             x: torch.Tensor,
             rope: Optional[torch.Tensor] = None,
             attn_mask: Optional[torch.Tensor] = None,
+            is_causal: bool = False,
     ) -> torch.Tensor:
         if self.gamma_1 is None:
-            x = x + self.drop_path1(self.attn(self.norm1(x), rope=rope, attn_mask=attn_mask))
+            x = x + self.drop_path1(self.attn(self.norm1(x), rope=rope, attn_mask=attn_mask, is_causal=is_causal))
             x = x + self.drop_path2(self.mlp(self.norm2(x)))
         else:
-            x = x + self.drop_path1(self.gamma_1 * self.attn(self.norm1(x), rope=rope, attn_mask=attn_mask))
+            x = x + self.drop_path1(self.gamma_1 * self.attn(self.norm1(x), rope=rope, attn_mask=attn_mask, is_causal=is_causal))
             x = x + self.drop_path2(self.gamma_2 * self.mlp(self.norm2(x)))
         return x
 
@@ -364,8 +426,9 @@ class EvaBlockPostNorm(nn.Module):
             mlp_ratio: float = 4.,
             attn_type: str = 'eva',
             rotate_half: bool = False,
+            gated_attn: bool = False,
             swiglu_mlp: bool = False,
-            swiglu_aligh_to: int = 0,
+            swiglu_align_to: int = 0,
             scale_mlp: bool = False,
             scale_attn_inner: bool = False,
             num_prefix_tokens: int = 1,
@@ -376,6 +439,9 @@ class EvaBlockPostNorm(nn.Module):
             act_layer: Callable = nn.GELU,
             norm_layer: Callable = nn.LayerNorm,
             attn_head_dim: Optional[int] = None,
+            device=None,
+            dtype=None,
+            **kwargs,
     ):
         """ Initialize the post-norm EVA transformer block.
 
@@ -398,7 +464,9 @@ class EvaBlockPostNorm(nn.Module):
             norm_layer: Normalization layer constructor
             attn_head_dim: Dimension of each attention head (if None, computed as dim // num_heads)
         """
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
+
         attn_cls = AttentionRope if attn_type == 'rope' else EvaAttention
         self.attn = attn_cls(
             dim,
@@ -412,8 +480,10 @@ class EvaBlockPostNorm(nn.Module):
             norm_layer=norm_layer,
             scale_norm=scale_attn_inner,
             rotate_half=rotate_half,
+            gated=gated_attn,
+            **dd,
         )
-        self.norm1 = norm_layer(dim)
+        self.norm1 = norm_layer(dim, **dd)
         self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
         hidden_features = int(dim * mlp_ratio)
@@ -425,6 +495,8 @@ class EvaBlockPostNorm(nn.Module):
                     hidden_features=hidden_features,
                     norm_layer=norm_layer if scale_mlp else None,
                     drop=proj_drop,
+                    align_to=swiglu_align_to,
+                    **dd,
                 )
             else:
                 # w/o any extra norm, an impl with packed fc1 weights is used, matches existing GluMLP
@@ -435,6 +507,7 @@ class EvaBlockPostNorm(nn.Module):
                     act_layer=nn.SiLU,
                     gate_last=False,
                     drop=proj_drop,
+                    **dd,
                 )
         else:
             self.mlp = Mlp(
@@ -443,8 +516,9 @@ class EvaBlockPostNorm(nn.Module):
                 act_layer=act_layer,
                 norm_layer=norm_layer if scale_mlp else None,
                 drop=proj_drop,
+                **dd,
             )
-        self.norm2 = norm_layer(dim)
+        self.norm2 = norm_layer(dim, **dd)
         self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
     def forward(
@@ -452,8 +526,9 @@ class EvaBlockPostNorm(nn.Module):
             x: torch.Tensor,
             rope: Optional[torch.Tensor] = None,
             attn_mask: Optional[torch.Tensor] = None,
+            is_causal: bool = False,
     ) -> torch.Tensor:
-        x = x + self.drop_path1(self.norm1(self.attn(x, rope=rope, attn_mask=attn_mask)))
+        x = x + self.drop_path1(self.norm1(self.attn(x, rope=rope, attn_mask=attn_mask, is_causal=is_causal)))
         x = x + self.drop_path2(self.norm2(self.mlp(x)))
         return x
 
@@ -512,6 +587,8 @@ class Eva(nn.Module):
             dynamic_img_pad: bool = False,
             ref_feat_shape: Optional[Union[Tuple[int, int], int]] = None,
             head_init_scale: float = 0.001,
+            device=None,
+            dtype=None,
     ):
         """Initialize the EVA Vision Transformer model.
 
@@ -561,8 +638,10 @@ class Eva(nn.Module):
             head_init_scale: Initialization scale for classification head weights
         """
         super().__init__()
+        dd = {'device': device, 'dtype': dtype}
         assert global_pool in ('', 'avg', 'avgmax', 'max', 'token', 'map')
         self.num_classes = num_classes
+        self.in_chans = in_chans
         self.global_pool = global_pool
         self.num_features = self.head_hidden_size = self.embed_dim = embed_dim  # for consistency with other models
         self.num_prefix_tokens = (1 if class_token else 0) + num_reg_tokens
@@ -593,16 +672,17 @@ class Eva(nn.Module):
             dynamic_img_pad=dynamic_img_pad,
             bias=not use_pre_transformer_norm,
             **embed_args,
+            **dd,
         )
         num_patches = self.patch_embed.num_patches
         r = self.patch_embed.feat_ratio() if hasattr(self.patch_embed, 'feat_ratio') else patch_size
 
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if class_token else None
-        self.reg_token = nn.Parameter(torch.zeros(1, num_reg_tokens, embed_dim)) if num_reg_tokens else None
+        self.cls_token = nn.Parameter(torch.empty(1, 1, embed_dim, **dd)) if class_token else None
+        self.reg_token = nn.Parameter(torch.empty(1, num_reg_tokens, embed_dim, **dd)) if num_reg_tokens else None
         self.cls_embed = class_token and self.reg_token is None
 
         num_pos_tokens = num_patches if no_embed_class else num_patches + self.num_prefix_tokens
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_pos_tokens, embed_dim)) if use_abs_pos_emb else None
+        self.pos_embed = nn.Parameter(torch.empty(1, num_pos_tokens, embed_dim, **dd)) if use_abs_pos_emb else None
         self.pos_drop = nn.Dropout(p=pos_drop_rate)
         if patch_drop_rate > 0:
             self.patch_drop = PatchDropoutWithIndices(patch_drop_rate, num_prefix_tokens=self.num_prefix_tokens)
@@ -620,6 +700,7 @@ class Eva(nn.Module):
                 feat_shape=None if dynamic_img_size else self.patch_embed.grid_size,
                 temperature=rope_temperature,
                 grid_indexing=rope_grid_indexing,
+                **dd,
             )
             if rope_type == 'mixed':
                 rope_kwargs.update(dict(depth=depth))
@@ -635,9 +716,9 @@ class Eva(nn.Module):
         else:
             self.rope = None
 
-        self.norm_pre = norm_layer(embed_dim) if activate_pre_norm else nn.Identity()
+        self.norm_pre = norm_layer(embed_dim, **dd) if activate_pre_norm else nn.Identity()
 
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
+        dpr = calculate_drop_path_rates(drop_path_rate, depth)  # stochastic depth decay rule
         block_fn = EvaBlockPostNorm if use_post_norm else EvaBlock
         self.blocks = nn.ModuleList([
             block_fn(
@@ -658,12 +739,13 @@ class Eva(nn.Module):
                 drop_path=dpr[i],
                 norm_layer=norm_layer,
                 init_values=init_values,
+                **dd,
             )
             for i in range(depth)])
         self.feature_info = [
             dict(module=f'blocks.{i}', num_chs=embed_dim, reduction=r) for i in range(depth)]
 
-        self.norm = norm_layer(embed_dim) if activate_post_norm else nn.Identity()
+        self.norm = norm_layer(embed_dim, **dd) if activate_post_norm else nn.Identity()
 
         if global_pool == 'map':
             self.attn_pool = AttentionPoolLatent(
@@ -672,14 +754,20 @@ class Eva(nn.Module):
                 mlp_ratio=attn_pool_mlp_ratio or mlp_ratio,
                 norm_layer=norm_layer,
                 act_layer=nn.GELU,
+                **dd,
             )
         else:
             self.attn_pool = None
-        self.fc_norm = norm_layer(embed_dim) if activate_fc_norm else nn.Identity()
+        self.fc_norm = norm_layer(embed_dim, **dd) if activate_fc_norm else nn.Identity()
         self.head_drop = nn.Dropout(drop_rate)
-        self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = nn.Linear(embed_dim, num_classes, **dd) if num_classes > 0 else nn.Identity()
+        self.head_init_scale = head_init_scale
 
-        self.apply(self._init_weights)
+        # TODO: skip init when on meta device when safe to do so
+        self.init_weights(needs_reset=False)
+
+    def init_weights(self, needs_reset: bool = True):
+        self.apply(partial(self._init_weights, needs_reset=needs_reset))
         if self.pos_embed is not None:
             trunc_normal_(self.pos_embed, std=.02)
         if self.cls_token is not None:
@@ -688,35 +776,39 @@ class Eva(nn.Module):
             trunc_normal_(self.reg_token, std=.02)
 
         self.fix_init_weight()
-        if isinstance(self.head, nn.Linear):
+
+        if self.head_init_scale and isinstance(self.head, nn.Linear):
             trunc_normal_(self.head.weight, std=.02)
-            self.head.weight.data.mul_(head_init_scale)
-            self.head.bias.data.mul_(head_init_scale)
+            with torch.no_grad():
+                self.head.weight.mul_(self.head_init_scale)
+                self.head.bias.mul_(self.head_init_scale)
 
     def fix_init_weight(self) -> None:
         """Fix initialization weights by rescaling based on layer depth."""
-        def rescale(param, layer_id):
-            param.div_(math.sqrt(2.0 * layer_id))
+        with torch.no_grad():
+            for layer_id, layer in enumerate(self.blocks):
+                scale = math.sqrt(2.0 * (layer_id + 1))
+                layer.attn.proj.weight.div_(scale)
+                layer.mlp.fc2.weight.div_(scale)
 
-        for layer_id, layer in enumerate(self.blocks):
-            rescale(layer.attn.proj.weight.data, layer_id + 1)
-            rescale(layer.mlp.fc2.weight.data, layer_id + 1)
-
-    def _init_weights(self, m: nn.Module) -> None:
-        """Initialize weights for Linear layers.
+    def _init_weights(self, m: nn.Module, needs_reset: bool = True) -> None:
+        """Initialize weights for Linear layers and call reset_parameters on modules.
 
         Args:
             m: Module to initialize.
+            needs_reset: Whether to call reset_parameters() on modules.
         """
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=.02)
             if m.bias is not None:
                 nn.init.zeros_(m.bias)
+        elif needs_reset and hasattr(m, 'reset_parameters') and m is not self:
+            m.reset_parameters()
 
     @torch.jit.ignore
     def no_weight_decay(self) -> Set[str]:
         """Parameters to exclude from weight decay."""
-        nwd = {'pos_embed', 'cls_token'}
+        nwd = {'pos_embed', 'cls_token', 'reg_token'}
         if (rope := getattr(self, "rope", None)) and hasattr(rope, "no_weight_decay"):
             return nwd | {f"rope.{p}" for p in rope.no_weight_decay()}
         return nwd
@@ -730,7 +822,7 @@ class Eva(nn.Module):
     def group_matcher(self, coarse: bool = False) -> Dict[str, Any]:
         """Create layer groupings for optimization."""
         matcher = dict(
-            stem=r'^cls_token|pos_embed|patch_embed',  # stem and embed
+            stem=r'^cls_token|reg_token|pos_embed|patch_embed',  # stem and embed
             blocks=[(r'^blocks\.(\d+)', None), (r'^norm', (99999,))],
         )
         return matcher
@@ -844,6 +936,8 @@ class Eva(nn.Module):
             stop_early: bool = False,
             output_fmt: str = 'NCHW',
             intermediates_only: bool = False,
+            attn_mask: Optional[torch.Tensor] = None,
+            is_causal: bool = False,
     ) -> Union[List[torch.Tensor], Tuple[torch.Tensor, List[torch.Tensor]]]:
         """ Forward features that returns intermediates.
         Args:
@@ -854,6 +948,8 @@ class Eva(nn.Module):
             stop_early: Stop iterating over blocks when last desired intermediate hit
             output_fmt: Shape of intermediate feature outputs
             intermediates_only: Only return intermediate features
+            attn_mask: Optional attention mask for masked attention
+            is_causal: If True, use causal (autoregressive) masking in attention
         """
         assert output_fmt in ('NCHW', 'NLC'), 'Output format for EVA-ViT features must be one of NCHW or NLC.'
         reshape = output_fmt == 'NCHW'
@@ -874,17 +970,17 @@ class Eva(nn.Module):
         if getattr(self, 'rope_mixed', False) and rot_pos_embed is not None:
             for i, blk in enumerate(blocks):
                 if self.grad_checkpointing and not torch.jit.is_scripting():
-                    x = checkpoint(blk, x, rope=rot_pos_embed[i])
+                    x = checkpoint(blk, x, rope=rot_pos_embed[i], attn_mask=attn_mask, is_causal=is_causal)
                 else:
-                    x = blk(x, rope=rot_pos_embed[i])
+                    x = blk(x, rope=rot_pos_embed[i], attn_mask=attn_mask, is_causal=is_causal)
                 if i in take_indices:
                     intermediates.append(self.norm(x) if norm else x)
         else:
             for i, blk in enumerate(blocks):
                 if self.grad_checkpointing and not torch.jit.is_scripting():
-                    x = checkpoint(blk, x, rope=rot_pos_embed)
+                    x = checkpoint(blk, x, rope=rot_pos_embed, attn_mask=attn_mask, is_causal=is_causal)
                 else:
-                    x = blk(x, rope=rot_pos_embed)
+                    x = blk(x, rope=rot_pos_embed, attn_mask=attn_mask, is_causal=is_causal)
                 if i in take_indices:
                     intermediates.append(self.norm(x) if norm else x)
 
@@ -934,11 +1030,18 @@ class Eva(nn.Module):
         x = global_pool_nlc(x, pool_type=pool_type, num_prefix_tokens=self.num_prefix_tokens)
         return x
 
-    def forward_features(self, x: torch.Tensor) -> torch.Tensor:
+    def forward_features(
+            self,
+            x: torch.Tensor,
+            attn_mask: Optional[torch.Tensor] = None,
+            is_causal: bool = False,
+    ) -> torch.Tensor:
         """Forward pass through feature extraction layers.
 
         Args:
             x: Input tensor.
+            attn_mask: Optional attention mask for masked attention
+            is_causal: If True, use causal (autoregressive) masking in attention.
 
         Returns:
             Feature tensor.
@@ -952,16 +1055,16 @@ class Eva(nn.Module):
             # pos embed has shape (depth, num_heads, H*W, dim) or (depth, batch_size, num_heads, H*W, dim)
             for i, blk in enumerate(self.blocks):
                 if self.grad_checkpointing and not torch.jit.is_scripting():
-                    x = checkpoint(blk, x, rope=rot_pos_embed[i])
+                    x = checkpoint(blk, x, rope=rot_pos_embed[i], attn_mask=attn_mask, is_causal=is_causal)
                 else:
-                    x = blk(x, rope=rot_pos_embed[i])
+                    x = blk(x, rope=rot_pos_embed[i], attn_mask=attn_mask, is_causal=is_causal)
         else:
             # Standard path for non-mixed mode
             for blk in self.blocks:
                 if self.grad_checkpointing and not torch.jit.is_scripting():
-                    x = checkpoint(blk, x, rope=rot_pos_embed)
+                    x = checkpoint(blk, x, rope=rot_pos_embed, attn_mask=attn_mask, is_causal=is_causal)
                 else:
-                    x = blk(x, rope=rot_pos_embed)
+                    x = blk(x, rope=rot_pos_embed, attn_mask=attn_mask, is_causal=is_causal)
 
         x = self.norm(x)
         return x
@@ -981,16 +1084,23 @@ class Eva(nn.Module):
         x = self.head_drop(x)
         return x if pre_logits else self.head(x)
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
+    def forward(
+            self,
+            x: torch.Tensor,
+            attn_mask: Optional[torch.Tensor] = None,
+            is_causal: bool = False,
+    ) -> torch.Tensor:
         """Forward pass.
 
         Args:
             x: Input tensor.
+            attn_mask: Optional attention mask for masked attention
+            is_causal: If True, use causal (autoregressive) masking in attention.
 
         Returns:
             Output tensor.
         """
-        x = self.forward_features(x)
+        x = self.forward_features(x, attn_mask=attn_mask, is_causal=is_causal)
         x = self.forward_head(x)
         return x
 
@@ -1121,6 +1231,9 @@ def checkpoint_filter_fn(
         if dinov3_weights:
             if any([k.endswith(f) for f in ['.periods', '.bias_mask', 'mask_token']]):
                 # discard unused/non-persistent/pretrain only params
+                continue
+            if k.startswith('projectors.'):
+                # discard optional distillation projection heads from EUPE checkpoints
                 continue
             if k.startswith('local_cls_norm'):
                 # discard, only used for 7b dinov3 pretrain w/ local crops
@@ -1256,12 +1369,16 @@ def _pe_cfg(url: str = '', **kwargs) -> Dict[str, Any]:
         'crop_pct': 1.0, 'interpolation': 'bicubic', 'fixed_input_size': True,
         'mean': (0.5, 0.5, 0.5), 'std': (0.5, 0.5, 0.5),
         'first_conv': 'patch_embed.proj', 'classifier': 'head',
-        'license': 'custom', **kwargs
+        'license': 'apache-2.0', **kwargs
     }
 
 
 def _dinov3_cfg(url: str = '', **kwargs) -> Dict[str, Any]:
     """Generate default configuration for DINOv3 models.
+
+    Note: Original DINOv3 uses CLS-token pooling for representations. timm defaults to avg
+    pooling for the Eva architecture. Pass global_pool='token' at model creation to match
+    upstream behavior, which may be preferred for tasks like retrieval and few-shot classification.
 
     Args:
         url: Model weights URL.
@@ -1273,10 +1390,45 @@ def _dinov3_cfg(url: str = '', **kwargs) -> Dict[str, Any]:
     return {
         'url': url,
         'num_classes': 0, 'input_size': (3, 256, 256), 'pool_size': None,
-        'crop_pct': 1.0, 'interpolation': 'bicubic', 'min_input_size': (3, 128, 128),
+        'crop_pct': 1.0, 'interpolation': 'bicubic', 'fixed_input_size': True,
         'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD,
         'first_conv': 'patch_embed.proj', 'classifier': 'head',
-        'license': 'dinov3', **kwargs
+        'license': 'dinov3-license', **kwargs
+    }
+
+
+def _eupe_cfg(url: str = '', **kwargs) -> Dict[str, Any]:
+    """Generate default configuration for EUPE models."""
+    return {
+        'url': url,
+        'num_classes': 0, 'input_size': (3, 256, 256), 'pool_size': None,
+        'crop_pct': 1.0, 'interpolation': 'bicubic', 'fixed_input_size': True,
+        'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD,
+        'first_conv': 'patch_embed.proj', 'classifier': 'head',
+        'license': 'fair-noncommercial-research-license', **kwargs
+    }
+
+
+def _lingbot_cfg(url: str = '', **kwargs) -> Dict[str, Any]:
+    """Generate default configuration for LingBot-Vision models.
+
+    LingBot-Vision uses CLS-token pooling for representations, which the model entrypoints use by default.
+
+    Args:
+        url: Model weights URL.
+        **kwargs: Additional configuration parameters.
+
+    Returns:
+        Model configuration dictionary.
+    """
+    return {
+        'url': url,
+        'num_classes': 0, 'input_size': (3, 512, 512), 'pool_size': None,
+        'crop_pct': 1.0, 'crop_mode': 'squash', 'interpolation': 'bilinear', 'fixed_input_size': True,
+        'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD,
+        'first_conv': 'patch_embed.proj', 'classifier': 'head',
+        'license': 'apache-2.0', 'origin_url': 'https://github.com/robbyant/lingbot-vision',
+        'paper_ids': 'arXiv:2607.05247', **kwargs
     }
 
 default_cfgs = generate_default_cfgs({
@@ -1633,50 +1785,76 @@ default_cfgs = generate_default_cfgs({
 
     # DINOv3 weights are under a specific license with redistribution terms, please see
     # https://github.com/facebookresearch/dinov3/blob/main/LICENSE.md
-    'vit_small_patch16_dinov3.lvd_1689m': _dinov3_cfg(
+    # NOTE: Original DINOv3 uses CLS-token pooling (global_pool='token') which may be better
+    # for some tasks. Default here is avg pooling inherited from the Eva base class.
+    'vit_small_patch16_dinov3.lvd1689m': _dinov3_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_small_patch16_dinov3_qkvb.lvd_1689m': _dinov3_cfg(
+    'vit_small_patch16_dinov3_qkvb.lvd1689m': _dinov3_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_small_plus_patch16_dinov3.lvd_1689m': _dinov3_cfg(
+    'vit_small_plus_patch16_dinov3.lvd1689m': _dinov3_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_small_plus_patch16_dinov3_qkvb.lvd_1689m': _dinov3_cfg(
+    'vit_small_plus_patch16_dinov3_qkvb.lvd1689m': _dinov3_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_base_patch16_dinov3.lvd_1689m': _dinov3_cfg(
+    'vit_base_patch16_dinov3.lvd1689m': _dinov3_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_base_patch16_dinov3_qkvb.lvd_1689m': _dinov3_cfg(
+    'vit_base_patch16_dinov3_qkvb.lvd1689m': _dinov3_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_large_patch16_dinov3.lvd_1689m': _dinov3_cfg(
+    'vit_tiny_patch16_dinov3_qkvb.eupe_lvd1689m': _eupe_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_large_patch16_dinov3_qkvb.lvd_1689m': _dinov3_cfg(
+    'vit_small_patch16_dinov3_qkvb.eupe_lvd1689m': _eupe_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_large_patch16_dinov3.sat_493m': _dinov3_cfg(
+    'vit_base_patch16_dinov3_qkvb.eupe_lvd1689m': _eupe_cfg(
+        hf_hub_id='timm/',
+    ),
+    'vit_large_patch16_dinov3.lvd1689m': _dinov3_cfg(
+        hf_hub_id='timm/',
+    ),
+    'vit_large_patch16_dinov3_qkvb.lvd1689m': _dinov3_cfg(
+        hf_hub_id='timm/',
+    ),
+    'vit_large_patch16_dinov3.sat493m': _dinov3_cfg(
         hf_hub_id='timm/',
         mean=(0.430, 0.411, 0.296), std=(0.213, 0.156, 0.143),
     ),
-    'vit_large_patch16_dinov3_qkvb.sat_493m': _dinov3_cfg(
+    'vit_large_patch16_dinov3_qkvb.sat493m': _dinov3_cfg(
         hf_hub_id='timm/',
         mean=(0.430, 0.411, 0.296), std=(0.213, 0.156, 0.143),
     ),
-    'vit_huge_plus_patch16_dinov3.lvd_1689m': _dinov3_cfg(
+    'vit_huge_plus_patch16_dinov3.lvd1689m': _dinov3_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_huge_plus_patch16_dinov3_qkvb.lvd_1689m': _dinov3_cfg(
+    'vit_huge_plus_patch16_dinov3_qkvb.lvd1689m': _dinov3_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_7b_patch16_dinov3.lvd_1689m': _dinov3_cfg(
+    'vit_7b_patch16_dinov3.lvd1689m': _dinov3_cfg(
         hf_hub_id='timm/',
     ),
-    'vit_7b_patch16_dinov3.sat_493m': _dinov3_cfg(
+    'vit_7b_patch16_dinov3.sat493m': _dinov3_cfg(
         hf_hub_id='timm/',
         mean=(0.430, 0.411, 0.296), std=(0.213, 0.156, 0.143),
+    ),
+
+    # LingBot-Vision weights are released under Apache-2.0, please see
+    # https://github.com/robbyant/lingbot-vision/blob/main/LICENSE
+    'vit_small_patch16_lingbot.robbyant': _lingbot_cfg(
+        hf_hub_id='belfner/vit_small_patch16_lingbot.robbyant',
+    ),
+    'vit_base_patch16_lingbot.robbyant': _lingbot_cfg(
+        hf_hub_id='belfner/vit_base_patch16_lingbot.robbyant',
+    ),
+    'vit_large_patch16_lingbot.robbyant': _lingbot_cfg(
+        hf_hub_id='belfner/vit_large_patch16_lingbot.robbyant',
+    ),
+    'vit_giant_patch16_lingbot.robbyant': _lingbot_cfg(
+        hf_hub_id='belfner/vit_giant_patch16_lingbot.robbyant',
     ),
 
 })
@@ -2538,7 +2716,7 @@ def vit_large_patch16_rope_ape_224(pretrained: bool = False, **kwargs) -> Eva:
         rope_grid_indexing='xy',
         rope_temperature=100.0,
     )
-    
+
     model = _create_eva('vit_large_patch16_rope_ape_224', pretrained=pretrained, **dict(model_args, **kwargs))
     return model
 
@@ -2620,8 +2798,36 @@ def vit_large_patch16_rope_mixed_ape_224(pretrained: bool = False, **kwargs) -> 
 
 
 @register_model
+def vit_tiny_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
+    """DINOv3-style T/16 w/ QKV bias enabled."""
+    model_args = dict(
+        patch_size=16,
+        dynamic_img_size=True,
+        embed_dim=192,
+        depth=12,
+        num_heads=3,
+        qkv_bias=True,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
+        init_values=1.0e-05, # layer-scale
+        rope_type='dinov3',
+        rope_temperature=100,
+        #rope_rescale_coords=2,  # haven't added to interface
+        rope_rotate_half=True,
+        use_rot_pos_emb=True,
+        use_abs_pos_emb=False,
+        num_reg_tokens=4,
+        use_fc_norm=False,
+        norm_layer=partial(LayerNorm, eps=1e-5),
+    )
+    model = _create_eva('vit_tiny_patch16_dinov3_qkvb', pretrained=pretrained, **dict(model_args, **kwargs))
+    return model
+
+
+@register_model
 def vit_small_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 S/16 https://arxiv.org/abs/2508.10104"""
+    """DINOv3 S/16 https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2629,6 +2835,7 @@ def vit_small_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
         depth=12,
         num_heads=6,
         qkv_bias=False,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         init_values=1.0e-05, # layer-scale
         rope_type='dinov3',
         rope_temperature=100,
@@ -2646,7 +2853,9 @@ def vit_small_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
 
 @register_model
 def vit_small_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 S/16 w/ QKV bias enabled (but zero) https://arxiv.org/abs/2508.10104"""
+    """DINOv3 S/16 w/ QKV bias enabled (but zero) https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2654,6 +2863,7 @@ def vit_small_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
         depth=12,
         num_heads=6,
         qkv_bias=True,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         init_values=1.0e-05, # layer-scale
         rope_type='dinov3',
         rope_temperature=100,
@@ -2671,7 +2881,9 @@ def vit_small_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
 
 @register_model
 def vit_small_plus_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 S/16 Plus https://arxiv.org/abs/2508.10104"""
+    """DINOv3 S/16 Plus https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2679,6 +2891,7 @@ def vit_small_plus_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
         depth=12,
         num_heads=6,
         qkv_bias=False,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         init_values=1.0e-05, # layer-scale
         rope_type='dinov3',
         rope_temperature=100,
@@ -2698,7 +2911,9 @@ def vit_small_plus_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
 
 @register_model
 def vit_small_plus_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 S/16 Plus w/ QKV bias enabled (but 0) https://arxiv.org/abs/2508.10104"""
+    """DINOv3 S/16 Plus w/ QKV bias enabled (but 0) https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2706,6 +2921,7 @@ def vit_small_plus_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Ev
         depth=12,
         num_heads=6,
         qkv_bias=True,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         init_values=1.0e-05, # layer-scale
         rope_type='dinov3',
         rope_temperature=100,
@@ -2725,7 +2941,9 @@ def vit_small_plus_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Ev
 
 @register_model
 def vit_base_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 B/16 https://arxiv.org/abs/2508.10104"""
+    """DINOv3 B/16 https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2733,6 +2951,7 @@ def vit_base_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
         depth=12,
         num_heads=12,
         qkv_bias=False,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         init_values=1.0e-05, # layer-scale
         rope_type='dinov3',
         rope_temperature=100,
@@ -2750,7 +2969,9 @@ def vit_base_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
 
 @register_model
 def vit_base_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 B/16 w/ QKV bias enabled (but zero) https://arxiv.org/abs/2508.10104"""
+    """DINOv3 B/16 w/ QKV bias enabled (but zero) https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2758,6 +2979,7 @@ def vit_base_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
         depth=12,
         num_heads=12,
         qkv_bias=True,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         init_values=1.0e-05, # layer-scale
         rope_type='dinov3',
         rope_temperature=100,
@@ -2775,7 +2997,9 @@ def vit_base_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
 
 @register_model
 def vit_large_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 L/16 https://arxiv.org/abs/2508.10104"""
+    """DINOv3 L/16 https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2783,6 +3007,7 @@ def vit_large_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
         depth=24,
         num_heads=16,
         qkv_bias=False,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         init_values=1.0e-5, # layer-scale
         rope_type='dinov3',
         rope_temperature=100,
@@ -2800,7 +3025,9 @@ def vit_large_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
 
 @register_model
 def vit_large_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 w/ QKV bias enabled (but zero) https://arxiv.org/abs/2508.10104"""
+    """DINOv3 w/ QKV bias enabled (but zero) https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2808,6 +3035,7 @@ def vit_large_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
         depth=24,
         num_heads=16,
         qkv_bias=True,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         init_values=1.0e-5, # layer-scale
         rope_type='dinov3',
         rope_temperature=100,
@@ -2825,7 +3053,9 @@ def vit_large_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
 
 @register_model
 def vit_huge_plus_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 H/16 Plus https://arxiv.org/abs/2508.10104"""
+    """DINOv3 H/16 Plus https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2833,6 +3063,7 @@ def vit_huge_plus_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
         depth=32,
         num_heads=20,
         qkv_bias=False,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         init_values=1.0e-5, # layer-scale
         rope_type='dinov3',
         rope_temperature=100,
@@ -2853,7 +3084,9 @@ def vit_huge_plus_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
 
 @register_model
 def vit_huge_plus_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 H/16 Plus w/ QKV bias enabled (but zero) https://arxiv.org/abs/2508.10104"""
+    """DINOv3 H/16 Plus w/ QKV bias enabled (but zero) https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2861,6 +3094,7 @@ def vit_huge_plus_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva
         depth=32,
         num_heads=20,
         qkv_bias=True,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         init_values=1.0e-5, # layer-scale
         rope_type='dinov3',
         rope_temperature=100,
@@ -2880,7 +3114,9 @@ def vit_huge_plus_patch16_dinov3_qkvb(pretrained: bool = False, **kwargs) -> Eva
 
 @register_model
 def vit_7b_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
-    """DINOv3 7B/16 https://arxiv.org/abs/2508.10104"""
+    """DINOv3 7B/16 https://arxiv.org/abs/2508.10104
+    NOTE: Pass global_pool='token' to use CLS-token pooling (matches upstream DINOv3).
+    """
     model_args = dict(
         patch_size=16,
         dynamic_img_size=True,
@@ -2888,6 +3124,7 @@ def vit_7b_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
         depth=40,
         num_heads=32,
         qkv_bias=False,
+        # global_pool='token',  # upstream uses CLS token; default here is 'avg', pass via kwargs or --gp
         mlp_ratio=2,
         init_values=1.0e-5, # layer-scale
         rope_type='dinov3',
@@ -2904,4 +3141,120 @@ def vit_7b_patch16_dinov3(pretrained: bool = False, **kwargs) -> Eva:
     )
 
     model = _create_eva('vit_7b_patch16_dinov3', pretrained=pretrained, **dict(model_args, **kwargs))
+    return model
+
+
+@register_model
+def vit_small_patch16_lingbot(pretrained: bool = False, **kwargs) -> Eva:
+    """LingBot-Vision S/16 https://arxiv.org/abs/2607.05247
+    Uses CLS-token pooling by default to match upstream LingBot-Vision.
+    """
+    model_args = dict(
+        patch_size=16,
+        dynamic_img_size=True,
+        embed_dim=384,
+        depth=12,
+        num_heads=6,
+        qkv_bias=True,
+        global_pool='token',
+        init_values=1.0e-05, # layer-scale
+        rope_type='dinov3',
+        rope_temperature=100,
+        #rope_rescale_coords=2,  # haven't added to interface
+        rope_rotate_half=True,
+        use_rot_pos_emb=True,
+        use_abs_pos_emb=False,
+        num_reg_tokens=4,
+        use_fc_norm=False,
+        norm_layer=partial(LayerNorm, eps=1e-5),
+    )
+    model = _create_eva('vit_small_patch16_lingbot', pretrained=pretrained, **dict(model_args, **kwargs))
+    return model
+
+
+@register_model
+def vit_base_patch16_lingbot(pretrained: bool = False, **kwargs) -> Eva:
+    """LingBot-Vision B/16 https://arxiv.org/abs/2607.05247
+    Uses CLS-token pooling by default to match upstream LingBot-Vision.
+    """
+    model_args = dict(
+        patch_size=16,
+        dynamic_img_size=True,
+        embed_dim=768,
+        depth=12,
+        num_heads=12,
+        qkv_bias=True,
+        global_pool='token',
+        init_values=1.0e-05, # layer-scale
+        rope_type='dinov3',
+        rope_temperature=100,
+        #rope_rescale_coords=2,  # haven't added to interface
+        rope_rotate_half=True,
+        use_rot_pos_emb=True,
+        use_abs_pos_emb=False,
+        num_reg_tokens=4,
+        use_fc_norm=False,
+        norm_layer=partial(LayerNorm, eps=1e-5),
+    )
+    model = _create_eva('vit_base_patch16_lingbot', pretrained=pretrained, **dict(model_args, **kwargs))
+    return model
+
+
+@register_model
+def vit_large_patch16_lingbot(pretrained: bool = False, **kwargs) -> Eva:
+    """LingBot-Vision L/16 https://arxiv.org/abs/2607.05247
+    Uses CLS-token pooling by default to match upstream LingBot-Vision.
+    """
+    model_args = dict(
+        patch_size=16,
+        dynamic_img_size=True,
+        embed_dim=1024,
+        depth=24,
+        num_heads=16,
+        qkv_bias=True,
+        global_pool='token',
+        init_values=1.0e-05, # layer-scale
+        rope_type='dinov3',
+        rope_temperature=100,
+        #rope_rescale_coords=2,  # haven't added to interface
+        rope_rotate_half=True,
+        use_rot_pos_emb=True,
+        use_abs_pos_emb=False,
+        num_reg_tokens=4,
+        use_fc_norm=False,
+        norm_layer=partial(LayerNorm, eps=1e-5),
+    )
+    model = _create_eva('vit_large_patch16_lingbot', pretrained=pretrained, **dict(model_args, **kwargs))
+    return model
+
+
+@register_model
+def vit_giant_patch16_lingbot(pretrained: bool = False, **kwargs) -> Eva:
+    """LingBot-Vision G/16 https://arxiv.org/abs/2607.05247
+    Uses CLS-token pooling by default to match upstream LingBot-Vision.
+    """
+    model_args = dict(
+        patch_size=16,
+        dynamic_img_size=True,
+        embed_dim=1536,
+        depth=40,
+        num_heads=24,
+        qkv_bias=False,
+        global_pool='token',
+        mlp_ratio=4 * 2 / 3,
+        init_values=1.0e-5, # layer-scale
+        rope_type='dinov3',
+        rope_temperature=100,
+        use_rot_pos_emb=True,
+        use_abs_pos_emb=False,
+        rope_rotate_half=True,
+        swiglu_mlp=True,
+        swiglu_align_to=8,
+        #rope_rescale_coords=2,  # haven't added to interface
+        num_reg_tokens=4,
+        use_fc_norm=False,
+        norm_layer=partial(LayerNorm, eps=1e-5),
+    )
+
+    model = _create_eva('vit_giant_patch16_lingbot', pretrained=pretrained, **dict(model_args, **kwargs))
     return model

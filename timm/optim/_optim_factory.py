@@ -5,7 +5,7 @@ Hacked together by / Copyright 2021 Ross Wightman
 import logging
 from dataclasses import dataclass
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
+from typing import Any, Callable, Collection, Dict, List, Optional, Set, Tuple, Type, Union
 from fnmatch import fnmatch
 import importlib
 
@@ -17,6 +17,7 @@ from ._param_groups import param_groups_layer_decay, param_groups_weight_decay
 from ._types import ParamsT, OptimType, OptimizerCallable
 from .adabelief import AdaBelief
 from .adafactor import Adafactor
+from .adafactor_bv import AdafactorBigVision
 from .adahessian import Adahessian
 from .adamp import AdamP
 from .adamw import AdamWLegacy
@@ -30,6 +31,7 @@ from .lion import Lion
 from .lookahead import Lookahead
 from .madgrad import MADGRAD
 from .mars import Mars
+from .muon import Muon
 from .nadam import NAdamLegacy
 from .nadamw import NAdamW
 from .nvnovograd import NvNovoGrad
@@ -232,6 +234,8 @@ class OptimizerRegistry:
             momentum: float = 0.9,
             foreach: Optional[bool] = None,
             weight_decay_exclude_1d: bool = True,
+            fallback_list: Collection[str] = (),
+            fallback_no_weight_decay: bool = False,
             layer_decay: Optional[float] = None,
             layer_decay_min_scale: Optional[float] = None,
             layer_decay_no_opt_scale: Optional[float] = None,
@@ -248,9 +252,11 @@ class OptimizerRegistry:
             momentum: Momentum factor for applicable optimizers
             foreach: Enable/disable foreach operation
             weight_decay_exclude_1d: Whether to skip weight decay for 1d params (biases and norm affine)
+            fallback_list: Collection of parameter name patterns to use fallback optimizer for hybrid optimizers
+            fallback_no_weight_decay: If True, params in no_weight_decay list will use fallback optimizer (e.g., AdamW for Muon)
             layer_decay: Layer-wise learning rate decay
-            layer_scale_min_scale: Minimum layer scale factor clamp value
-            layer_scale_no_opt_scale: Layer scale below which optimization is disabled
+            layer_decay_min_scale: Minimum layer scale factor clamp value
+            layer_decay_no_opt_scale: Layer scale below which optimization is disabled
             param_group_fn: Optional custom parameter grouping function
             **kwargs: Additional optimizer-specific arguments
 
@@ -275,20 +281,23 @@ class OptimizerRegistry:
                     weight_decay=weight_decay,
                     layer_decay=layer_decay,
                     no_weight_decay_list=no_weight_decay,
+                    fallback_list=fallback_list,
+                    fallback_no_weight_decay=fallback_no_weight_decay,
                     weight_decay_exclude_1d=weight_decay_exclude_1d,
                     min_scale=layer_decay_min_scale,
                     no_opt_scale=layer_decay_no_opt_scale,
                 )
                 weight_decay = 0.
-            elif weight_decay and weight_decay_exclude_1d:
+            else:
                 params = param_groups_weight_decay(
                     model_or_params,
                     weight_decay=weight_decay,
+                    weight_decay_exclude_1d=weight_decay_exclude_1d,
                     no_weight_decay_list=no_weight_decay,
+                    fallback_list=fallback_list,
+                    fallback_no_weight_decay=fallback_no_weight_decay,
                 )
                 weight_decay = 0.
-            else:
-                params = model_or_params.parameters()
         else:
             # pass parameters / parameter groups through to optimizer
             params = model_or_params
@@ -455,6 +464,11 @@ def _register_adam_variants(registry: OptimizerRegistry) -> None:
             description='Memory-efficient implementation of Adam with factored gradients',
         ),
         OptimInfo(
+            name='adafactorbv',
+            opt_class=AdafactorBigVision,
+            description='Big Vision variant of Adafactor with factored gradients, half precision momentum',
+        ),
+        OptimInfo(
             name='adopt',
             opt_class=Adopt,
             description='Modified Adam that can converge with any β2 with the optimal rate',
@@ -599,6 +613,12 @@ def _register_corrected_decay_optimizers(registry: OptimizerRegistry) -> None:
             has_momentum=True,
             defaults={'alpha': 0.9, 'decoupled_decay': True, 'corrected_weight_decay': True}
         ),
+        OptimInfo(
+            name='adafactorbvc',
+            opt_class=AdafactorBigVision,
+            description='Adafactor Big Vision with corrected weight decay (lr²/max_lr or lr/max_lr scaling)',
+            defaults={'corrected_weight_decay': True}
+        ),
     ]
     for opt in corrected_optimizers:
         registry.register(opt)
@@ -641,6 +661,12 @@ def _register_corrected_decay_optimizers(registry: OptimizerRegistry) -> None:
             has_betas=True,
             defaults={'caution': True, 'corrected_weight_decay': True}
         ),
+        OptimInfo(
+            name='cadafactorbvc',
+            opt_class=AdafactorBigVision,
+            description='Cautious Adafactor Big Vision with corrected weight decay',
+            defaults={'caution': True, 'corrected_weight_decay': True}
+        ),
     ]
     for opt in cautious_corrected:
         registry.register(opt)
@@ -652,6 +678,12 @@ def _register_cautious_optimizers(registry: OptimizerRegistry) -> None:
             name='cadafactor',
             opt_class=Adafactor,
             description='Cautious Adafactor',
+            defaults={'caution': True}
+        ),
+        OptimInfo(
+            name='cadafactorbv',
+            opt_class=AdafactorBigVision,
+            description='Cautious Big Vision Adafactor',
             defaults={'caution': True}
         ),
         OptimInfo(
@@ -747,6 +779,20 @@ def _register_cautious_optimizers(registry: OptimizerRegistry) -> None:
             has_momentum=True,
             defaults={'nesterov': True, 'caution': True}
         ),
+        OptimInfo(
+            name='cadamp',
+            opt_class=AdamP,
+            description='Add the spherical cautious optimizer and the standard cautious optimizer to AdamP',
+            has_betas=True,
+            defaults={'wd_ratio': 0.01, 'nesterov': True, 'caution': True}
+        ),
+        OptimInfo(
+            name='csgdp',
+            opt_class=SGDP,
+            description='Add the spherical cautious optimizer and the standard cautious optimizer to SGDP',
+            has_momentum=True,
+            defaults={'nesterov': True, 'caution': True}
+        ),
     ]
     for opt in cautious_optimizers:
         registry.register(opt)
@@ -806,6 +852,7 @@ def _register_other_optimizers(registry: OptimizerRegistry) -> None:
             name='kron',
             opt_class=Kron,
             description='PSGD optimizer with Kronecker-factored preconditioner',
+            has_eps=False,
             has_momentum=True,
         ),
         OptimInfo(
@@ -813,6 +860,7 @@ def _register_other_optimizers(registry: OptimizerRegistry) -> None:
             opt_class=Kron,
             description='PSGD optimizer with Kronecker-factored preconditioner and decoupled weight decay',
             has_momentum=True,
+            has_eps=False,
             defaults={'decoupled_decay': True}
         ),
         OptimInfo(
@@ -846,6 +894,41 @@ def _register_other_optimizers(registry: OptimizerRegistry) -> None:
             opt_class=Mars,
             description='Unleashing the Power of Variance Reduction for Training Large Models',
             has_betas=True,
+        ),
+        OptimInfo(
+            name='muon',
+            opt_class=Muon,
+            description='MomentUm Orthogonalized by Newton-schulz with AdamW fallback for 1D params',
+            has_momentum=True,
+            has_eps=True,
+            has_betas=True,
+        ),
+        OptimInfo(
+            name='nmuon',
+            opt_class=Muon,
+            description='MomentUm Orthogonalized by Newton-schulz with Nesterov and NAdamW fallback for 1D params',
+            has_momentum=True,
+            has_eps=True,
+            has_betas=True,
+            defaults={'nesterov': True}
+        ),
+        OptimInfo(
+            name='adamuon',
+            opt_class=Muon,
+            description='AdaMuon: Muon with adaptive second moment estimation on orthogonalized directions',
+            has_momentum=True,
+            has_eps=True,
+            has_betas=True,
+            defaults={'algo': 'adamuon'}
+        ),
+        OptimInfo(
+            name='nadamuon',
+            opt_class=Muon,
+            description='AdaMuon with Nesterov momentum and NAdamW fallback for 1D params',
+            has_momentum=True,
+            has_eps=True,
+            has_betas=True,
+            defaults={'algo': 'adamuon', 'nesterov': True}
         ),
         OptimInfo(
             name='novograd',
@@ -1121,6 +1204,8 @@ def create_optimizer_v2(
         momentum: float = 0.9,
         foreach: Optional[bool] = None,
         filter_bias_and_bn: bool = True,
+        fallback_list: Collection[str] = (),
+        fallback_no_weight_decay: bool = False,
         layer_decay: Optional[float] = None,
         layer_decay_min_scale: float = 0.0,
         layer_decay_no_opt_scale: Optional[float] = None,
@@ -1148,6 +1233,10 @@ def create_optimizer_v2(
         filter_bias_and_bn: If True, bias, norm layer parameters (all 1d params) will not have
             weight decay applied. Only used when model_or_params is a model and
             weight_decay > 0.
+        fallback_list: Collection of parameter name patterns to use fallback optimizer for
+            hybrid optimizers (e.g., AdamW for Muon). Supports wildcard matching.
+        fallback_no_weight_decay: If True, params in model's no_weight_decay() list will use
+            fallback optimizer for hybrid optimizers (e.g., AdamW for Muon).
         layer_decay: Optional layer-wise learning rate decay factor. If provided,
             learning rates will be scaled by layer_decay^(max_depth - layer_depth).
             Only used when model_or_params is a model.
@@ -1198,6 +1287,8 @@ def create_optimizer_v2(
         momentum=momentum,
         foreach=foreach,
         weight_decay_exclude_1d=filter_bias_and_bn,
+        fallback_list=fallback_list,
+        fallback_no_weight_decay=fallback_no_weight_decay,
         layer_decay=layer_decay,
         layer_decay_min_scale=layer_decay_min_scale,
         layer_decay_no_opt_scale=layer_decay_no_opt_scale,

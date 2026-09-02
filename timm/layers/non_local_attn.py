@@ -4,6 +4,8 @@ Paper: `Non-Local Neural Networks With Grouped Bilinear Attentional Transforms`
     - https://openaccess.thecvf.com/content_CVPR_2020/html/Chi_Non-Local_Neural_Networks_With_Grouped_Bilinear_Attentional_Transforms_CVPR_2020_paper.html
 Adapted from original code: https://github.com/BA-Transform/BAT-Image-Classification
 """
+from typing import Optional, Type
+
 import torch
 from torch import nn
 from torch.nn import functional as F
@@ -21,16 +23,27 @@ class NonLocalAttn(nn.Module):
     Their NonLocal impl inspired by https://github.com/facebookresearch/video-nonlocal-net.
     """
 
-    def __init__(self, in_channels, use_scale=True,  rd_ratio=1/8, rd_channels=None, rd_divisor=8, **kwargs):
-        super(NonLocalAttn, self).__init__()
+    def __init__(
+            self,
+            in_channels,
+            use_scale=True,
+            rd_ratio=1/8,
+            rd_channels=None,
+            rd_divisor=8,
+            device=None,
+            dtype=None,
+            **_,
+    ):
+        dd = {'device': device, 'dtype': dtype}
+        super().__init__()
         if rd_channels is None:
             rd_channels = make_divisible(in_channels * rd_ratio, divisor=rd_divisor)
         self.scale = in_channels ** -0.5 if use_scale else 1.0
-        self.t = nn.Conv2d(in_channels, rd_channels, kernel_size=1, stride=1, bias=True)
-        self.p = nn.Conv2d(in_channels, rd_channels, kernel_size=1, stride=1, bias=True)
-        self.g = nn.Conv2d(in_channels, rd_channels, kernel_size=1, stride=1, bias=True)
-        self.z = nn.Conv2d(rd_channels, in_channels, kernel_size=1, stride=1, bias=True)
-        self.norm = nn.BatchNorm2d(in_channels)
+        self.t = nn.Conv2d(in_channels, rd_channels, kernel_size=1, stride=1, bias=True, **dd)
+        self.p = nn.Conv2d(in_channels, rd_channels, kernel_size=1, stride=1, bias=True, **dd)
+        self.g = nn.Conv2d(in_channels, rd_channels, kernel_size=1, stride=1, bias=True, **dd)
+        self.z = nn.Conv2d(rd_channels, in_channels, kernel_size=1, stride=1, bias=True, **dd)
+        self.norm = nn.BatchNorm2d(in_channels, **dd)
         self.reset_parameters()
 
     def forward(self, x):
@@ -73,13 +86,22 @@ class NonLocalAttn(nn.Module):
 @register_notrace_module
 class BilinearAttnTransform(nn.Module):
 
-    def __init__(self, in_channels, block_size, groups, act_layer=nn.ReLU, norm_layer=nn.BatchNorm2d):
-        super(BilinearAttnTransform, self).__init__()
-
-        self.conv1 = ConvNormAct(in_channels, groups, 1, act_layer=act_layer, norm_layer=norm_layer)
-        self.conv_p = nn.Conv2d(groups, block_size * block_size * groups, kernel_size=(block_size, 1))
-        self.conv_q = nn.Conv2d(groups, block_size * block_size * groups, kernel_size=(1, block_size))
-        self.conv2 = ConvNormAct(in_channels, in_channels, 1, act_layer=act_layer, norm_layer=norm_layer)
+    def __init__(
+            self,
+            in_channels: int,
+            block_size: int,
+            groups: int,
+            act_layer: Type[nn.Module] = nn.ReLU,
+            norm_layer: Type[nn.Module] = nn.BatchNorm2d,
+            device=None,
+            dtype=None,
+    ):
+        dd = {'device': device, 'dtype': dtype}
+        super().__init__()
+        self.conv1 = ConvNormAct(in_channels, groups, 1, act_layer=act_layer, norm_layer=norm_layer, **dd)
+        self.conv_p = nn.Conv2d(groups, block_size * block_size * groups, kernel_size=(block_size, 1), **dd)
+        self.conv_q = nn.Conv2d(groups, block_size * block_size * groups, kernel_size=(1, block_size), **dd)
+        self.conv2 = ConvNormAct(in_channels, in_channels, 1, act_layer=act_layer, norm_layer=norm_layer, **dd)
         self.block_size = block_size
         self.groups = groups
         self.in_channels = in_channels
@@ -129,14 +151,34 @@ class BatNonLocalAttn(nn.Module):
     """
 
     def __init__(
-            self, in_channels, block_size=7, groups=2, rd_ratio=0.25, rd_channels=None, rd_divisor=8,
-            drop_rate=0.2, act_layer=nn.ReLU, norm_layer=nn.BatchNorm2d, **_):
+            self,
+            in_channels: int,
+            block_size: int = 7,
+            groups: int = 2,
+            rd_ratio: float = 0.25,
+            rd_channels: Optional[int] = None,
+            rd_divisor: int = 8,
+            drop_rate: float = 0.2,
+            act_layer: Type[nn.Module] = nn.ReLU,
+            norm_layer: Type[nn.Module] = nn.BatchNorm2d,
+            device=None,
+            dtype=None,
+            **_,
+    ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         if rd_channels is None:
             rd_channels = make_divisible(in_channels * rd_ratio, divisor=rd_divisor)
-        self.conv1 = ConvNormAct(in_channels, rd_channels, 1, act_layer=act_layer, norm_layer=norm_layer)
-        self.ba = BilinearAttnTransform(rd_channels, block_size, groups, act_layer=act_layer, norm_layer=norm_layer)
-        self.conv2 = ConvNormAct(rd_channels, in_channels, 1, act_layer=act_layer, norm_layer=norm_layer)
+        self.conv1 = ConvNormAct(in_channels, rd_channels, 1, act_layer=act_layer, norm_layer=norm_layer, **dd)
+        self.ba = BilinearAttnTransform(
+            rd_channels,
+            block_size,
+            groups,
+            act_layer=act_layer,
+            norm_layer=norm_layer,
+            **dd,
+        )
+        self.conv2 = ConvNormAct(rd_channels, in_channels, 1, act_layer=act_layer, norm_layer=norm_layer, **dd)
         self.dropout = nn.Dropout2d(p=drop_rate)
 
     def forward(self, x):

@@ -8,6 +8,8 @@ Hacked together by / Copyright 2020 Ross Wightman
 
 import math
 from functools import partial
+from typing import Union, Tuple
+
 import torch
 from torch import nn as nn
 from torch.nn import functional as F
@@ -41,9 +43,22 @@ class CondConv2d(nn.Module):
     """
     __constants__ = ['in_channels', 'out_channels', 'dynamic_padding']
 
-    def __init__(self, in_channels, out_channels, kernel_size=3,
-                 stride=1, padding='', dilation=1, groups=1, bias=False, num_experts=4):
-        super(CondConv2d, self).__init__()
+    def __init__(
+            self,
+            in_channels: int,
+            out_channels: int,
+            kernel_size: Union[int, Tuple[int, int]] = 3,
+            stride: Union[int, Tuple[int, int]] = 1,
+            padding: Union[int, Tuple[int, int], str] = '',
+            dilation: Union[int, Tuple[int, int]] = 1,
+            groups: int = 1,
+            bias: bool = False,
+            num_experts: int = 4,
+            device=None,
+            dtype=None,
+    ):
+        dd = {'device': device, 'dtype': dtype}
+        super().__init__()
 
         self.in_channels = in_channels
         self.out_channels = out_channels
@@ -61,11 +76,11 @@ class CondConv2d(nn.Module):
         weight_num_param = 1
         for wd in self.weight_shape:
             weight_num_param *= wd
-        self.weight = torch.nn.Parameter(torch.Tensor(self.num_experts, weight_num_param))
+        self.weight = torch.nn.Parameter(torch.empty(self.num_experts, weight_num_param, **dd))
 
         if bias:
             self.bias_shape = (self.out_channels,)
-            self.bias = torch.nn.Parameter(torch.Tensor(self.num_experts, self.out_channels))
+            self.bias = torch.nn.Parameter(torch.empty(self.num_experts, self.out_channels, **dd))
         else:
             self.register_parameter('bias', None)
 

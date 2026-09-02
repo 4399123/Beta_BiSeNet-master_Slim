@@ -3,7 +3,7 @@ import math
 import re
 from collections import defaultdict
 from itertools import chain
-from typing import Any, Callable, Dict, Iterator, Optional, Tuple, Type, Union
+from typing import Any, Callable, Dict, Iterator, List, Optional, Tuple, Type, Union
 
 import torch
 import torch.utils.checkpoint
@@ -14,7 +14,8 @@ from timm.layers import use_reentrant_ckpt
 
 
 __all__ = ['model_parameters', 'named_apply', 'named_modules', 'named_modules_with_params', 'adapt_input_conv',
-           'group_with_matcher', 'group_modules', 'group_parameters', 'flatten_modules', 'checkpoint_seq', 'checkpoint']
+           'group_with_matcher', 'group_modules', 'group_parameters', 'flatten_modules', 'checkpoint_seq', 'checkpoint',
+           'reinit_non_persistent_buffers']
 
 
 def model_parameters(model: nn.Module, exclude_head: bool = False):
@@ -288,6 +289,13 @@ def checkpoint_seq(
 def adapt_input_conv(in_chans: int, conv_weight: Tensor) -> Tensor:
     conv_type = conv_weight.dtype
     conv_weight = conv_weight.float()  # Some weights are in torch.half, ensure it's float for sum on CPU
+    if conv_weight.ndim != 4:
+        # Non-Conv2d first-conv weight (e.g., Linear patch embed in NaFlexVit /
+        # Gemma4Vit). Can't infer the (C, P, P) factorization from shape alone,
+        # so delegate to the caller's fallback (weight dropped, strict=False).
+        raise NotImplementedError(
+            f'adapt_input_conv only supports 4D Conv2d weights; got ndim={conv_weight.ndim}.'
+        )
     O, I, J, K = conv_weight.shape
     if in_chans == 1:
         if I > 3:
@@ -308,3 +316,31 @@ def adapt_input_conv(in_chans: int, conv_weight: Tensor) -> Tensor:
             conv_weight *= (3 / float(in_chans))
     conv_weight = conv_weight.to(conv_type)
     return conv_weight
+
+
+def reinit_non_persistent_buffers(model: nn.Module) -> List[str]:
+    """Walk model and call init_non_persistent_buffers() on modules that have it.
+
+    This reinitializes computed buffers (like RoPE frequencies, attention bias indices)
+    that are marked as non-persistent and thus not saved in checkpoints. These buffers
+    are typically computed from module configuration and need to be reinitialized after
+    loading a checkpoint.
+
+    Args:
+        model: Model to reinitialize buffers for
+
+    Returns:
+        List of module names that were reinitialized
+
+    Example:
+        >>> model = create_model('vit_base', pretrained=True)
+        >>> # After loading checkpoint or moving to new device
+        >>> reinitialized = reinit_non_persistent_buffers(model)
+        >>> print(f"Reinitialized {len(reinitialized)} modules")
+    """
+    reinitialized = []
+    for name, module in model.named_modules():
+        if hasattr(module, 'init_non_persistent_buffers'):
+            module.init_non_persistent_buffers()
+            reinitialized.append(name if name else '(root)')
+    return reinitialized

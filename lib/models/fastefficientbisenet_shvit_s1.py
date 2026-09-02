@@ -200,14 +200,14 @@ class FastEfficientBiSeNet_SHViT_S1(nn.Module):
         with autocast(enabled=self.use_fp16):
             # 获取 Backbone 输出 (假设返回四层)
             # feat8(1/8), feat16(1/16), feat32(1/32), feat64(1/64)
-            if (self.aux_mode == 'pred'):
-
-                # 定义均值和方差
-                mean = torch.tensor([120.0, 114.0, 104.0]).view(1, 3, 1, 1)
-                std = torch.tensor([70.0, 69.0, 73.0]).view(1, 3, 1, 1)
-
-                # 归一化：(x - mean) / std
-                x = (x - mean) / std
+            # if (self.aux_mode == 'pred'):
+            #
+            #     # 定义均值和方差
+            #     mean = torch.tensor([120.0, 114.0, 104.0]).view(1, 3, 1, 1)
+            #     std = torch.tensor([70.0, 69.0, 73.0]).view(1, 3, 1, 1)
+            #
+            #     # 归一化：(x - mean) / std
+            #     x = (x - mean) / std
 
             feat16, feat32, feat64 = self.backbone(x)
 
@@ -233,9 +233,9 @@ class FastEfficientBiSeNet_SHViT_S1(nn.Module):
             elif self.aux_mode == 'eval':
                 return logits,
             elif self.aux_mode == 'pred':
-                feat_out = torch.argmax(out, dim=1)
+                feat_out = torch.argmax(logits, dim=1)
                 feat_out = torch.tensor(feat_out, dtype=torch.float32)
-                feat_out = feat_out[:, None, :, :]
+                # feat_out = feat_out[:, None, :, :]
                 return feat_out
 
             else:

@@ -19,15 +19,27 @@ import collections.abc
 import logging
 import math
 from functools import partial
-from typing import List, Optional, Tuple, Union
+from typing import List, Optional, Tuple, Type, Union
 
 import torch
 import torch.nn.functional as F
 from torch import nn
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.layers import PatchEmbed, Mlp, DropPath, create_classifier, trunc_normal_, _assert
-from timm.layers import create_conv2d, create_pool2d, to_ntuple, use_fused_attn, LayerNorm
+from timm.layers import (
+    PatchEmbed,
+    Mlp,
+    DropPath,
+    calculate_drop_path_rates,
+    create_classifier,
+    trunc_normal_,
+    _assert,
+    create_conv2d,
+    create_pool2d,
+    to_ntuple,
+    use_fused_attn,
+    LayerNorm,
+)
 from ._builder import build_model_with_cfg
 from ._features import feature_take_indices
 from ._features_fx import register_notrace_function
@@ -46,16 +58,26 @@ class Attention(nn.Module):
     """
     fused_attn: torch.jit.Final[bool]
 
-    def __init__(self, dim, num_heads=8, qkv_bias=False, attn_drop=0., proj_drop=0.):
+    def __init__(
+            self,
+            dim: int,
+            num_heads: int = 8,
+            qkv_bias: bool = False,
+            attn_drop: float = 0.,
+            proj_drop: float = 0.,
+            device=None,
+            dtype=None,
+    ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5
         self.fused_attn = use_fused_attn()
 
-        self.qkv = nn.Linear(dim, 3*dim, bias=qkv_bias)
+        self.qkv = nn.Linear(dim, 3*dim, bias=qkv_bias, **dd)
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
+        self.proj = nn.Linear(dim, dim, **dd)
         self.proj_drop = nn.Dropout(proj_drop)
 
     def forward(self, x):
@@ -91,47 +113,62 @@ class TransformerLayer(nn.Module):
     """
     def __init__(
             self,
-            dim,
-            num_heads,
-            mlp_ratio=4.,
-            qkv_bias=False,
-            proj_drop=0.,
-            attn_drop=0.,
-            drop_path=0.,
-            act_layer=nn.GELU,
-            norm_layer=nn.LayerNorm,
+            dim: int,
+            num_heads: int,
+            mlp_ratio: float = 4.,
+            qkv_bias: bool = False,
+            proj_drop: float = 0.,
+            attn_drop: float = 0.,
+            drop_path: float = 0.,
+            act_layer: Type[nn.Module] = nn.GELU,
+            norm_layer: Type[nn.Module] = nn.LayerNorm,
+            device=None,
+            dtype=None,
     ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        self.norm1 = norm_layer(dim, **dd)
         self.attn = Attention(
             dim,
             num_heads=num_heads,
             qkv_bias=qkv_bias,
             attn_drop=attn_drop,
             proj_drop=proj_drop,
+            **dd,
         )
-        self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        self.norm2 = norm_layer(dim)
+        self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
+        self.norm2 = norm_layer(dim, **dd)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(
             in_features=dim,
             hidden_features=mlp_hidden_dim,
             act_layer=act_layer,
             drop=proj_drop,
+            **dd,
         )
+        self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
     def forward(self, x):
         y = self.norm1(x)
-        x = x + self.drop_path(self.attn(y))
-        x = x + self.drop_path(self.mlp(self.norm2(x)))
+        x = x + self.drop_path1(self.attn(y))
+        x = x + self.drop_path2(self.mlp(self.norm2(x)))
         return x
 
 
 class ConvPool(nn.Module):
-    def __init__(self, in_channels, out_channels, norm_layer, pad_type=''):
+    def __init__(
+            self,
+            in_channels: int,
+            out_channels: int,
+            norm_layer: Type[nn.Module],
+            pad_type: str = '',
+            device=None,
+            dtype=None,
+    ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
-        self.conv = create_conv2d(in_channels, out_channels, kernel_size=3, padding=pad_type, bias=True)
-        self.norm = norm_layer(out_channels)
+        self.conv = create_conv2d(in_channels, out_channels, kernel_size=3, padding=pad_type, bias=True, **dd)
+        self.norm = norm_layer(out_channels, **dd)
         self.pool = create_pool2d('max', kernel_size=3, stride=2, padding=pad_type)
 
     def forward(self, x):
@@ -183,30 +220,33 @@ class NestLevel(nn.Module):
     """
     def __init__(
             self,
-            num_blocks,
-            block_size,
-            seq_length,
-            num_heads,
-            depth,
-            embed_dim,
-            prev_embed_dim=None,
-            mlp_ratio=4.,
-            qkv_bias=True,
-            proj_drop=0.,
-            attn_drop=0.,
-            drop_path=[],
-            norm_layer=None,
-            act_layer=None,
-            pad_type='',
+            num_blocks: int,
+            block_size: int,
+            seq_length: int,
+            num_heads: int,
+            depth: int,
+            embed_dim: int,
+            prev_embed_dim: Optional[int] = None,
+            mlp_ratio: float = 4.,
+            qkv_bias: bool = True,
+            proj_drop: float = 0.,
+            attn_drop: float = 0.,
+            drop_path: Optional[List[float]] = None,
+            norm_layer: Optional[Type[nn.Module]] = None,
+            act_layer: Optional[Type[nn.Module]] = None,
+            pad_type: str = '',
+            device=None,
+            dtype=None,
     ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         self.block_size = block_size
         self.grad_checkpointing = False
 
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_blocks, seq_length, embed_dim))
+        self.pos_embed = nn.Parameter(torch.zeros(1, num_blocks, seq_length, embed_dim, **dd))
 
         if prev_embed_dim is not None:
-            self.pool = ConvPool(prev_embed_dim, embed_dim, norm_layer=norm_layer, pad_type=pad_type)
+            self.pool = ConvPool(prev_embed_dim, embed_dim, norm_layer=norm_layer, pad_type=pad_type, **dd)
         else:
             self.pool = nn.Identity()
 
@@ -221,9 +261,10 @@ class NestLevel(nn.Module):
                 qkv_bias=qkv_bias,
                 proj_drop=proj_drop,
                 attn_drop=attn_drop,
-                drop_path=drop_path[i],
+                drop_path=drop_path[i] if drop_path else None,
                 norm_layer=norm_layer,
                 act_layer=act_layer,
+                **dd,
             )
             for i in range(depth)])
 
@@ -253,25 +294,27 @@ class Nest(nn.Module):
 
     def __init__(
             self,
-            img_size=224,
-            in_chans=3,
-            patch_size=4,
-            num_levels=3,
-            embed_dims=(128, 256, 512),
-            num_heads=(4, 8, 16),
-            depths=(2, 2, 20),
-            num_classes=1000,
-            mlp_ratio=4.,
-            qkv_bias=True,
-            drop_rate=0.,
-            proj_drop_rate=0.,
-            attn_drop_rate=0.,
-            drop_path_rate=0.5,
-            norm_layer=None,
-            act_layer=None,
-            pad_type='',
-            weight_init='',
-            global_pool='avg',
+            img_size: int = 224,
+            in_chans: int = 3,
+            patch_size: int = 4,
+            num_levels: int = 3,
+            embed_dims: Tuple[int, ...] = (128, 256, 512),
+            num_heads: Tuple[int, ...] = (4, 8, 16),
+            depths: Tuple[int, ...] = (2, 2, 20),
+            num_classes: int = 1000,
+            mlp_ratio: float = 4.,
+            qkv_bias: bool = True,
+            drop_rate: float = 0.,
+            proj_drop_rate: float = 0.,
+            attn_drop_rate: float = 0.,
+            drop_path_rate: float = 0.5,
+            norm_layer: Optional[Type[nn.Module]] = None,
+            act_layer: Optional[Type[nn.Module]] = None,
+            pad_type: str = '',
+            weight_init: str = '',
+            global_pool: str = 'avg',
+            device=None,
+            dtype=None,
     ):
         """
         Args:
@@ -301,7 +344,7 @@ class Nest(nn.Module):
                 - https://github.com/google-research/nested-transformer/issues/2
         """
         super().__init__()
-
+        dd = {'device': device, 'dtype': dtype}
         for param_name in ['embed_dims', 'num_heads', 'depths']:
             param_value = locals()[param_name]
             if isinstance(param_value, collections.abc.Sequence):
@@ -311,6 +354,7 @@ class Nest(nn.Module):
         num_heads = to_ntuple(num_levels)(num_heads)
         depths = to_ntuple(num_levels)(depths)
         self.num_classes = num_classes
+        self.in_chans = in_chans
         self.num_features = self.head_hidden_size = embed_dims[-1]
         self.feature_info = []
         norm_layer = norm_layer or LayerNorm
@@ -324,7 +368,7 @@ class Nest(nn.Module):
         self.patch_size = patch_size
 
         # Number of blocks at each level
-        self.num_blocks = (4 ** torch.arange(num_levels)).flip(0).tolist()
+        self.num_blocks = (4 ** torch.arange(num_levels, device='cpu', dtype=torch.long)).flip(0).tolist()
         assert (img_size // patch_size) % math.sqrt(self.num_blocks[0]) == 0, \
             'First level blocks don\'t fit evenly. Check `img_size`, `patch_size`, and `num_levels`'
 
@@ -340,13 +384,14 @@ class Nest(nn.Module):
             in_chans=in_chans,
             embed_dim=embed_dims[0],
             flatten=False,
+            **dd,
         )
         self.num_patches = self.patch_embed.num_patches
         self.seq_length = self.num_patches // self.num_blocks[0]
 
         # Build up each hierarchical level
         levels = []
-        dp_rates = [x.tolist() for x in torch.linspace(0, drop_path_rate, sum(depths)).split(depths)]
+        dp_rates = calculate_drop_path_rates(drop_path_rate, depths, stagewise=True)
         prev_dim = None
         curr_stride = 4
         for i in range(len(self.num_blocks)):
@@ -367,6 +412,7 @@ class Nest(nn.Module):
                 norm_layer=norm_layer,
                 act_layer=act_layer,
                 pad_type=pad_type,
+                **dd,
             ))
             self.feature_info += [dict(num_chs=dim, reduction=curr_stride, module=f'levels.{i}')]
             prev_dim = dim
@@ -374,10 +420,10 @@ class Nest(nn.Module):
         self.levels = nn.Sequential(*levels)
 
         # Final normalization layer
-        self.norm = norm_layer(embed_dims[-1])
+        self.norm = norm_layer(embed_dims[-1], **dd)
 
         # Classifier
-        global_pool, head = create_classifier(self.num_features, self.num_classes, pool_type=global_pool)
+        global_pool, head = create_classifier(self.num_features, self.num_classes, pool_type=global_pool, **dd)
         self.global_pool = global_pool
         self.head_drop = nn.Dropout(drop_rate)
         self.head = head
@@ -571,6 +617,7 @@ def _cfg(url='', **kwargs):
         'crop_pct': .875, 'interpolation': 'bicubic', 'fixed_input_size': True,
         'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD,
         'first_conv': 'patch_embed.proj', 'classifier': 'head',
+        'license': 'apache-2.0',
         **kwargs
     }
 

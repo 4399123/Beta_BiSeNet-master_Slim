@@ -6,6 +6,8 @@ Adapted from original PyTorch impl w/ weights at https://github.com/zhanghang198
 
 Modified for torchscript compat, and consistency with timm by Ross Wightman
 """
+from typing import Optional, Type
+
 from torch import nn
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
@@ -23,31 +25,33 @@ class ResNestBottleneck(nn.Module):
 
     def __init__(
             self,
-            inplanes,
-            planes,
-            stride=1,
-            downsample=None,
-            radix=1,
-            cardinality=1,
-            base_width=64,
-            avd=False,
-            avd_first=False,
-            is_first=False,
-            reduce_first=1,
-            dilation=1,
-            first_dilation=None,
-            act_layer=nn.ReLU,
-            norm_layer=nn.BatchNorm2d,
-            attn_layer=None,
-            aa_layer=None,
-            drop_block=None,
-            drop_path=None,
+            inplanes: int,
+            planes: int,
+            stride: int = 1,
+            downsample: Optional[nn.Module] = None,
+            radix: int = 1,
+            cardinality: int = 1,
+            base_width: int = 64,
+            avd: bool = False,
+            avd_first: bool = False,
+            is_first: bool = False,
+            reduce_first: int = 1,
+            dilation: int = 1,
+            first_dilation: Optional[int] = None,
+            act_layer: Type[nn.Module] = nn.ReLU,
+            norm_layer: Type[nn.Module] = nn.BatchNorm2d,
+            attn_layer: Optional[Type[nn.Module]] = None,
+            aa_layer: Optional[Type[nn.Module]] = None,
+            drop_block: Optional[Type[nn.Module]] = None,
+            drop_path: Optional[nn.Module] = None,
+            device=None,
+            dtype=None,
     ):
-        super(ResNestBottleneck, self).__init__()
+        dd = {'device': device, 'dtype': dtype}
+        super().__init__()
         assert reduce_first == 1  # not supported
-        assert attn_layer is None  # not supported
-        assert aa_layer is None  # TODO not yet supported
-        assert drop_path is None  # TODO not yet supported
+        assert attn_layer is None, 'attn_layer is not supported'  # not supported
+        assert aa_layer is None, 'aa_layer is not supported'  # TODO not yet supported
 
         group_width = int(planes * (base_width / 64.)) * cardinality
         first_dilation = first_dilation or dilation
@@ -58,31 +62,50 @@ class ResNestBottleneck(nn.Module):
             avd_stride = 0
         self.radix = radix
 
-        self.conv1 = nn.Conv2d(inplanes, group_width, kernel_size=1, bias=False)
-        self.bn1 = norm_layer(group_width)
+        self.conv1 = nn.Conv2d(inplanes, group_width, kernel_size=1, bias=False, **dd)
+        self.bn1 = norm_layer(group_width, **dd)
         self.act1 = act_layer(inplace=True)
         self.avd_first = nn.AvgPool2d(3, avd_stride, padding=1) if avd_stride > 0 and avd_first else None
 
         if self.radix >= 1:
             self.conv2 = SplitAttn(
-                group_width, group_width, kernel_size=3, stride=stride, padding=first_dilation,
-                dilation=first_dilation, groups=cardinality, radix=radix, norm_layer=norm_layer, drop_layer=drop_block)
+                group_width,
+                group_width,
+                kernel_size=3,
+                stride=stride,
+                padding=first_dilation,
+                dilation=first_dilation,
+                groups=cardinality,
+                radix=radix,
+                norm_layer=norm_layer,
+                drop_layer=drop_block,
+                **dd,
+            )
             self.bn2 = nn.Identity()
             self.drop_block = nn.Identity()
             self.act2 = nn.Identity()
         else:
             self.conv2 = nn.Conv2d(
-                group_width, group_width, kernel_size=3, stride=stride, padding=first_dilation,
-                dilation=first_dilation, groups=cardinality, bias=False)
-            self.bn2 = norm_layer(group_width)
+                group_width,
+                group_width,
+                kernel_size=3,
+                stride=stride,
+                padding=first_dilation,
+                dilation=first_dilation,
+                groups=cardinality,
+                bias=False,
+                **dd,
+            )
+            self.bn2 = norm_layer(group_width, **dd)
             self.drop_block = drop_block() if drop_block is not None else nn.Identity()
             self.act2 = act_layer(inplace=True)
         self.avd_last = nn.AvgPool2d(3, avd_stride, padding=1) if avd_stride > 0 and not avd_first else None
 
-        self.conv3 = nn.Conv2d(group_width, planes * 4, kernel_size=1, bias=False)
-        self.bn3 = norm_layer(planes*4)
+        self.conv3 = nn.Conv2d(group_width, planes * 4, kernel_size=1, bias=False, **dd)
+        self.bn3 = norm_layer(planes * 4, **dd)
         self.act3 = act_layer(inplace=True)
         self.downsample = downsample
+        self.drop_path = drop_path
 
     def zero_init_last(self):
         if getattr(self.bn3, 'weight', None) is not None:
@@ -109,6 +132,9 @@ class ResNestBottleneck(nn.Module):
         out = self.conv3(out)
         out = self.bn3(out)
 
+        if self.drop_path is not None:
+            x = self.drop_path(x)
+
         if self.downsample is not None:
             shortcut = self.downsample(x)
 
@@ -133,6 +159,7 @@ def _cfg(url='', **kwargs):
         'crop_pct': 0.875, 'interpolation': 'bilinear',
         'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD,
         'first_conv': 'conv1.0', 'classifier': 'fc',
+        'license': 'apache-2.0',
         **kwargs
     }
 

@@ -39,15 +39,28 @@ Modifications by / Copyright 2021 Ross Wightman, original copyrights below
 # --------------------------------------------------------'
 
 import math
-from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Union
+from functools import partial
+from typing import Any, Callable, Dict, List, Optional, Set, Tuple, Type, Union
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.layers import PatchEmbed, Mlp, SwiGLU, LayerNorm, DropPath, trunc_normal_, use_fused_attn
-from timm.layers import resample_patch_embed, resample_abs_pos_embed, resize_rel_pos_bias_table, ndgrid
+from timm.layers import (
+    PatchEmbed,
+    Mlp,
+    SwiGLU,
+    LayerNorm,
+    DropPath,
+    calculate_drop_path_rates,
+    trunc_normal_,
+    use_fused_attn,
+    resample_patch_embed,
+    resample_abs_pos_embed,
+    resize_rel_pos_bias_table,
+    ndgrid,
+)
 
 from ._builder import build_model_with_cfg
 from ._features import feature_take_indices
@@ -57,7 +70,7 @@ from ._registry import generate_default_cfgs, register_model
 __all__ = ['Beit']
 
 
-def gen_relative_position_index(window_size: Tuple[int, int]) -> torch.Tensor:
+def gen_relative_position_index(window_size: Tuple[int, int], device=None) -> torch.Tensor:
     """Generate relative position index for window-based attention.
 
     Creates a lookup table for relative position indices between all pairs of positions
@@ -74,14 +87,17 @@ def gen_relative_position_index(window_size: Tuple[int, int]) -> torch.Tensor:
     # cls to token & token 2 cls & cls to cls
     # get pair-wise relative position index for each token inside the window
     window_area = window_size[0] * window_size[1]
-    coords = torch.stack(ndgrid(torch.arange(window_size[0]), torch.arange(window_size[1])))  # 2, Wh, Ww
+    coords = torch.stack(ndgrid(
+        torch.arange(window_size[0], device=device, dtype=torch.long),
+        torch.arange(window_size[1], device=device, dtype=torch.long),
+    ))  # 2, Wh, Ww
     coords_flatten = torch.flatten(coords, 1)  # 2, Wh*Ww
     relative_coords = coords_flatten[:, :, None] - coords_flatten[:, None, :]  # 2, Wh*Ww, Wh*Ww
     relative_coords = relative_coords.permute(1, 2, 0).contiguous()  # Wh*Ww, Wh*Ww, 2
     relative_coords[:, :, 0] += window_size[0] - 1  # shift to start from 0
     relative_coords[:, :, 1] += window_size[1] - 1
     relative_coords[:, :, 0] *= 2 * window_size[1] - 1
-    relative_position_index = torch.zeros(size=(window_area + 1,) * 2, dtype=relative_coords.dtype)
+    relative_position_index = torch.zeros(size=(window_area + 1,) * 2, device=device, dtype=relative_coords.dtype)
     relative_position_index[1:, 1:] = relative_coords.sum(-1)  # Wh*Ww, Wh*Ww
     relative_position_index[0, 0:] = num_relative_distance - 3
     relative_position_index[0:, 0] = num_relative_distance - 2
@@ -107,6 +123,8 @@ class Attention(nn.Module):
             proj_drop: float = 0.,
             window_size: Optional[Tuple[int, int]] = None,
             attn_head_dim: Optional[int] = None,
+            device=None,
+            dtype=None,
     ):
         """Initialize attention module.
 
@@ -120,6 +138,7 @@ class Attention(nn.Module):
             window_size: Window size for relative position bias. If None, no relative position bias.
             attn_head_dim: Dimension per attention head. If None, uses dim // num_heads.
         """
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
@@ -130,11 +149,11 @@ class Attention(nn.Module):
         self.fused_attn = use_fused_attn()
         self.qkv_bias_separate = qkv_bias_separate
 
-        self.qkv = nn.Linear(dim, all_head_dim * 3, bias=False)
+        self.qkv = nn.Linear(dim, all_head_dim * 3, bias=False, **dd)
         if qkv_bias:
-            self.q_bias = nn.Parameter(torch.zeros(all_head_dim))
-            self.register_buffer('k_bias', torch.zeros(all_head_dim), persistent=False)
-            self.v_bias = nn.Parameter(torch.zeros(all_head_dim))
+            self.q_bias = nn.Parameter(torch.empty(all_head_dim, **dd))
+            self.register_buffer('k_bias', torch.empty(all_head_dim, **dd), persistent=False)
+            self.v_bias = nn.Parameter(torch.empty(all_head_dim, **dd))
         else:
             self.q_bias = None
             self.k_bias = None
@@ -143,17 +162,25 @@ class Attention(nn.Module):
         if window_size:
             self.window_size = window_size
             self.num_relative_distance = (2 * window_size[0] - 1) * (2 * window_size[1] - 1) + 3
+            window_area = window_size[0] * window_size[1]
             self.relative_position_bias_table = nn.Parameter(
-                torch.zeros(self.num_relative_distance, num_heads))  # 2*Wh-1 * 2*Ww-1, nH
-            self.register_buffer("relative_position_index", gen_relative_position_index(window_size), persistent=False)
+                torch.empty(self.num_relative_distance, num_heads, **dd))  # 2*Wh-1 * 2*Ww-1, nH
+            self.register_buffer(
+                "relative_position_index",
+                torch.empty((window_area + 1, window_area + 1), device=device, dtype=torch.long),
+                persistent=False,
+            )
         else:
             self.window_size = None
             self.relative_position_bias_table = None
             self.relative_position_index = None
 
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(all_head_dim, dim)
+        self.proj = nn.Linear(all_head_dim, dim, **dd)
         self.proj_drop = nn.Dropout(proj_drop)
+
+        # TODO: skip init when on meta device when safe to do so
+        self.reset_parameters()
 
     def _get_rel_pos_bias(self) -> torch.Tensor:
         """Get relative position bias for the attention window.
@@ -224,6 +251,28 @@ class Attention(nn.Module):
         x = self.proj_drop(x)
         return x
 
+    def reset_parameters(self) -> None:
+        """Initialize parameters and buffers."""
+        if self.q_bias is not None:
+            nn.init.zeros_(self.q_bias)
+            nn.init.zeros_(self.v_bias)
+        if self.relative_position_bias_table is not None:
+            nn.init.zeros_(self.relative_position_bias_table)
+        self._init_buffers()
+
+    def _init_buffers(self) -> None:
+        """Compute and fill non-persistent buffer values."""
+        if self.k_bias is not None:
+            self.k_bias.zero_()
+        if self.relative_position_index is not None:
+            self.relative_position_index.copy_(
+                gen_relative_position_index(self.window_size, device=self.relative_position_index.device)
+            )
+
+    def init_non_persistent_buffers(self) -> None:
+        """Initialize non-persistent buffers."""
+        self._init_buffers()
+
 
 class Block(nn.Module):
     """Transformer block with attention and MLP.
@@ -245,10 +294,12 @@ class Block(nn.Module):
             attn_drop: float = 0.,
             drop_path: float = 0.,
             init_values: Optional[float] = None,
-            act_layer: Callable = nn.GELU,
-            norm_layer: Callable = LayerNorm,
+            act_layer: Type[nn.Module] = nn.GELU,
+            norm_layer: Type[nn.Module] = LayerNorm,
             window_size: Optional[Tuple[int, int]] = None,
             attn_head_dim: Optional[int] = None,
+            device=None,
+            dtype=None,
     ):
         """Initialize transformer block.
 
@@ -268,8 +319,9 @@ class Block(nn.Module):
             window_size: Window size for relative position bias in attention.
             attn_head_dim: Dimension per attention head.
         """
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        self.norm1 = norm_layer(dim, **dd)
         self.attn = Attention(
             dim,
             num_heads=num_heads,
@@ -278,17 +330,19 @@ class Block(nn.Module):
             proj_drop=proj_drop,
             window_size=window_size,
             attn_head_dim=attn_head_dim,
+            **dd,
         )
         # NOTE: drop path for stochastic depth, we shall see if this is better than dropout here
         self.drop_path1 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
-        self.norm2 = norm_layer(dim)
+        self.norm2 = norm_layer(dim, **dd)
         if swiglu_mlp:
             self.mlp = SwiGLU(
                 in_features=dim,
                 hidden_features=int(dim * mlp_ratio),
                 norm_layer=norm_layer if scale_mlp else None,
                 drop=proj_drop,
+                **dd,
             )
         else:
             self.mlp = Mlp(
@@ -297,14 +351,25 @@ class Block(nn.Module):
                 act_layer=act_layer,
                 norm_layer=norm_layer if scale_mlp else None,
                 drop=proj_drop,
+                **dd,
             )
         self.drop_path2 = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
+        self.init_values = init_values
         if init_values:
-            self.gamma_1 = nn.Parameter(init_values * torch.ones(dim))
-            self.gamma_2 = nn.Parameter(init_values * torch.ones(dim))
+            self.gamma_1 = nn.Parameter(torch.empty(dim, **dd))
+            self.gamma_2 = nn.Parameter(torch.empty(dim, **dd))
         else:
             self.gamma_1, self.gamma_2 = None, None
+
+        # TODO: skip init when on meta device when safe to do so
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize parameters."""
+        if self.gamma_1 is not None:
+            nn.init.constant_(self.gamma_1, self.init_values)
+            nn.init.constant_(self.gamma_2, self.init_values)
 
     def forward(self, x: torch.Tensor, shared_rel_pos_bias: Optional[torch.Tensor] = None) -> torch.Tensor:
         """Forward pass of transformer block.
@@ -332,20 +397,42 @@ class RelativePositionBias(nn.Module):
     within a window, including special handling for cls token.
     """
 
-    def __init__(self, window_size: Tuple[int, int], num_heads: int):
+    def __init__(self, window_size: Tuple[int, int], num_heads: int, device=None, dtype=None):
         """Initialize relative position bias module.
 
         Args:
             window_size: Height and width of the attention window.
             num_heads: Number of attention heads.
         """
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         self.window_size = window_size
         self.window_area = window_size[0] * window_size[1]
         num_relative_distance = (2 * window_size[0] - 1) * (2 * window_size[1] - 1) + 3
-        self.relative_position_bias_table = nn.Parameter(torch.zeros(num_relative_distance, num_heads))
-        # trunc_normal_(self.relative_position_bias_table, std=.02)
-        self.register_buffer("relative_position_index", gen_relative_position_index(window_size))
+        self.relative_position_bias_table = nn.Parameter(torch.empty(num_relative_distance, num_heads, **dd))
+        self.register_buffer(
+            "relative_position_index",
+            torch.empty((self.window_area + 1, self.window_area + 1), device=device, dtype=torch.long),
+            persistent=False,
+        )
+
+        # TODO: skip init when on meta device when safe to do so
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        """Initialize parameters and buffers."""
+        nn.init.zeros_(self.relative_position_bias_table)
+        self._init_buffers()
+
+    def _init_buffers(self) -> None:
+        """Compute and fill non-persistent buffer values."""
+        self.relative_position_index.copy_(
+            gen_relative_position_index(self.window_size, device=self.relative_position_index.device)
+        )
+
+    def init_non_persistent_buffers(self) -> None:
+        """Initialize non-persistent buffers."""
+        self._init_buffers()
 
     def forward(self) -> torch.Tensor:
         """Generate relative position bias.
@@ -385,12 +472,14 @@ class Beit(nn.Module):
             proj_drop_rate: float = 0.,
             attn_drop_rate: float = 0.,
             drop_path_rate: float = 0.,
-            norm_layer: Callable = LayerNorm,
+            norm_layer: Type[nn.Module] = LayerNorm,
             init_values: Optional[float] = None,
             use_abs_pos_emb: bool = True,
             use_rel_pos_bias: bool = False,
             use_shared_rel_pos_bias: bool = False,
             head_init_scale: float = 0.001,
+            device=None,
+            dtype=None,
     ):
         """Initialize BEiT model.
 
@@ -419,8 +508,10 @@ class Beit(nn.Module):
             use_shared_rel_pos_bias: If True, share relative position bias across layers.
             head_init_scale: Scale factor for head initialization.
         """
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         self.num_classes = num_classes
+        self.in_chans = in_chans
         self.global_pool = global_pool
         self.num_features = self.head_hidden_size = self.embed_dim = embed_dim  # for consistency with other models
         self.num_prefix_tokens = 1
@@ -431,24 +522,26 @@ class Beit(nn.Module):
             patch_size=patch_size,
             in_chans=in_chans,
             embed_dim=embed_dim,
+            **dd,
         )
         num_patches = self.patch_embed.num_patches
         r = self.patch_embed.feat_ratio() if hasattr(self.patch_embed, 'feat_ratio') else patch_size
 
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        # self.mask_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
-        self.pos_embed = nn.Parameter(torch.zeros(1, num_patches + 1, embed_dim)) if use_abs_pos_emb else None
+        self.cls_token = nn.Parameter(torch.empty(1, 1, embed_dim, **dd))
+        # self.mask_token = nn.Parameter(torch.empty(1, 1, embed_dim))
+        self.pos_embed = nn.Parameter(torch.empty(1, num_patches + 1, embed_dim, **dd)) if use_abs_pos_emb else None
         self.pos_drop = nn.Dropout(p=pos_drop_rate)
 
         if use_shared_rel_pos_bias:
             self.rel_pos_bias = RelativePositionBias(
                 window_size=self.patch_embed.grid_size,
                 num_heads=num_heads,
+                **dd,
             )
         else:
             self.rel_pos_bias = None
 
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
+        dpr = calculate_drop_path_rates(drop_path_rate, depth)  # stochastic depth decay rule
         self.blocks = nn.ModuleList([
             Block(
                 dim=embed_dim,
@@ -463,54 +556,67 @@ class Beit(nn.Module):
                 norm_layer=norm_layer,
                 init_values=init_values,
                 window_size=self.patch_embed.grid_size if use_rel_pos_bias else None,
+                **dd,
             )
             for i in range(depth)])
         self.feature_info = [
             dict(module=f'blocks.{i}', num_chs=embed_dim, reduction=r) for i in range(depth)]
 
         use_fc_norm = self.global_pool == 'avg'
-        self.norm = nn.Identity() if use_fc_norm else norm_layer(embed_dim)
-        self.fc_norm = norm_layer(embed_dim) if use_fc_norm else nn.Identity()
+        self.norm = nn.Identity() if use_fc_norm else norm_layer(embed_dim, **dd)
+        self.fc_norm = norm_layer(embed_dim, **dd) if use_fc_norm else nn.Identity()
         self.head_drop = nn.Dropout(drop_rate)
-        self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = nn.Linear(embed_dim, num_classes, **dd) if num_classes > 0 else nn.Identity()
+        self.head_init_scale = head_init_scale
 
-        self.apply(self._init_weights)
+        # TODO: skip init when on meta device when safe to do so
+        self.init_weights(needs_reset=False)
+
+    def init_weights(self, needs_reset: bool = True) -> None:
+        """Initialize model weights.
+
+        Args:
+            needs_reset: If True, call reset_parameters() on modules that have it.
+                Set to False when modules have already self-initialized in __init__.
+        """
+        self.apply(partial(self._init_weights, needs_reset=needs_reset))
         if self.pos_embed is not None:
             trunc_normal_(self.pos_embed, std=.02)
         trunc_normal_(self.cls_token, std=.02)
 
         self.fix_init_weight()
-        if isinstance(self.head, nn.Linear):
-            trunc_normal_(self.head.weight, std=.02)
-            self.head.weight.data.mul_(head_init_scale)
-            self.head.bias.data.mul_(head_init_scale)
 
-    def fix_init_weight(self):
+        if self.head_init_scale and isinstance(self.head, nn.Linear):
+            trunc_normal_(self.head.weight, std=.02)
+            with torch.no_grad():
+                self.head.weight.mul_(self.head_init_scale)
+                self.head.bias.mul_(self.head_init_scale)
+
+    def fix_init_weight(self) -> None:
         """Fix initialization weights according to BEiT paper.
 
         Rescales attention and MLP weights based on layer depth to improve
         training stability.
         """
-        def rescale(param, layer_id):
-            param.div_(math.sqrt(2.0 * layer_id))
+        with torch.no_grad():
+            for layer_id, layer in enumerate(self.blocks):
+                scale = math.sqrt(2.0 * (layer_id + 1))
+                layer.attn.proj.weight.div_(scale)
+                layer.mlp.fc2.weight.div_(scale)
 
-        for layer_id, layer in enumerate(self.blocks):
-            rescale(layer.attn.proj.weight.data, layer_id + 1)
-            rescale(layer.mlp.fc2.weight.data, layer_id + 1)
-
-    def _init_weights(self, m: nn.Module):
+    def _init_weights(self, m: nn.Module, needs_reset: bool = True):
         """Initialize model weights.
 
         Args:
             m: Module to initialize.
+            needs_reset: If True, call reset_parameters() on modules that have it.
         """
         if isinstance(m, nn.Linear):
             trunc_normal_(m.weight, std=.02)
-            if isinstance(m, nn.Linear) and m.bias is not None:
+            if m.bias is not None:
                 nn.init.constant_(m.bias, 0)
-        elif isinstance(m, nn.LayerNorm):
-            nn.init.constant_(m.bias, 0)
-            nn.init.constant_(m.weight, 1.0)
+        elif needs_reset and hasattr(m, 'reset_parameters'):
+            m.reset_parameters()
 
     @torch.jit.ignore
     def no_weight_decay(self) -> Set[str]:
@@ -738,6 +844,7 @@ def _cfg(url: str = '', **kwargs) -> Dict[str, Any]:
         'crop_pct': .9, 'interpolation': 'bicubic', 'fixed_input_size': True,
         'mean': (0.5, 0.5, 0.5), 'std': (0.5, 0.5, 0.5),
         'first_conv': 'patch_embed.proj', 'classifier': 'head',
+        'license': 'apache-2.0',
         **kwargs
     }
 

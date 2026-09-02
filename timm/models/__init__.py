@@ -6,7 +6,9 @@ from .coat import *
 from .convit import *
 from .convmixer import *
 from .convnext import *
+from .cpubone import *
 from .crossvit import *
+from .csatv2 import *
 from .cspnet import *
 from .davit import *
 from .deit import *
@@ -24,6 +26,7 @@ from .fasternet import *
 from .fastvit import *
 from .focalnet import *
 from .gcvit import *
+from .gemma4_vit import *
 from .ghostnet import *
 from .hardcorenas import *
 from .hgnet import *
@@ -34,6 +37,7 @@ from .inception_next import *
 from .inception_resnet_v2 import *
 from .inception_v3 import *
 from .inception_v4 import *
+from .lcnetv2 import *
 from .levit import *
 from .maxxvit import *
 from .mambaout import *

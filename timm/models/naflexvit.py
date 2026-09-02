@@ -20,7 +20,7 @@ import logging
 import math
 from dataclasses import dataclass, fields, replace
 from functools import partial
-from typing import Callable, Dict, List, Optional, Set, Tuple, Type, Union, Any
+from typing import Callable, Dict, Iterable, List, Optional, Set, Tuple, Type, Union, Any
 
 import torch
 import torch.nn as nn
@@ -39,6 +39,7 @@ from timm.layers import (
     get_norm_layer,
     apply_keep_indices_nlc,
     disable_compiler,
+    calculate_drop_path_rates,
 )
 from ._builder import build_model_with_cfg
 from ._features import feature_take_indices
@@ -76,6 +77,7 @@ class NaFlexVitCfg:
     proj_bias: bool = True
     attn_drop_rate: float = 0.0
     scale_attn_inner_norm: bool = False  # Apply scaling norm to attn context
+    use_key_only_attn_mask: bool = False  # Use [B, 1, 1, N] key-only mask for self-attention
 
     # Regularization
     init_values: Optional[float] = None  # Layer-scale init values (layer-scale enabled if not None)
@@ -97,14 +99,17 @@ class NaFlexVitCfg:
     pos_embed_use_grid_sample: bool = False  # Whether to use grid_sample for naflex position embedding interpolation
 
     # ROPE specific configuration
-    rope_type: str = ''  # ROPE type: '' or 'none' for no ROPE, 'axial' for standard, 'mixed' for learnable frequencies
+    rope_type: str = ''  # ROPE type: '' / 'none', 'axial', 'mixed', 'dinov3', or 'mrope' (interleaved multimodal)
     rope_temperature: float = 10000.0  # Temperature for ROPE frequency computation
     rope_ref_feat_shape: Optional[Tuple[int, int]] = None
     rope_grid_offset: float = 0.  # Grid offset for non-pixel ROPE mode
     rope_grid_indexing: str = 'ij'  # Grid indexing mode for ROPE ('ij' or 'xy')
+    rope_rotate_half: bool = False  # Use rotate_half layout for ROPE (DINOv3 and 'mrope' use True)
+    rope_mrope_section: Optional[Tuple[int, int, int]] = None  # (T,H,W) channel split for rope_type='mrope'
 
     # Image processing
     dynamic_img_pad: bool = False  # Whether to enable dynamic padding for variable resolution
+    patchify_channels_last: bool = True  # Patch flat layout (matches data pipeline): True=(ph,pw,C), False=(C,ph,pw)
 
     # Other architecture choices
     pre_norm: bool = False  # Whether to apply normalization before attention/MLP layers (start of blocks)
@@ -131,9 +136,11 @@ class NaFlexVitCfg:
     act_layer: Optional[str] = None  # Activation layer for MLP blocks
     block_fn: Optional[str] = None  # Transformer block implementation class name
     mlp_layer: Optional[str] = None  # MLP implementation class name
+    attn_layer: Optional[str] = None  # Attention layer implementation (e.g., 'attn', 'diff')
 
     # EVA-specific parameters
     attn_type: str = 'standard'  # Attention type: 'standard', 'eva', 'rope'
+    attn_gated: bool = False  # Apply sigmoid output gate in attention (anti attention-sink, GenLIP-style)
     swiglu_mlp: bool = False  # Use SwiGLU MLP variant
     qkv_fused: bool = True  # Whether to use fused QKV projections
 
@@ -157,17 +164,22 @@ def batch_patchify(
         x: torch.Tensor,
         patch_size: Tuple[int, int],
         pad: bool = True,
+        channels_last: bool = True,
 ) -> Tuple[torch.Tensor, Tuple[int, int]]:
     """Patchify a batch of images.
 
     Args:
-        x: Input tensor of shape [B, C, H, W].
-        patch_size: Patch dimensions (patch_h, patch_w).
+        x: Input tensor of shape ``[B, C, H, W]``.
+        patch_size: Patch dimensions ``(patch_h, patch_w)``.
         pad: Whether to pad images to be divisible by patch size.
+        channels_last: Per-patch flat layout. ``True`` (default) yields ``P-P-C``
+            flat (channel index varies fastest); ``False`` yields ``C-P-P`` flat
+            (channel index varies slowest — HF / Gemma4 native layout).
 
     Returns:
-        Tuple of (patches, grid_size) where patches has shape [B, N, P*P*C]
-        and grid_size is (num_patches_h, num_patches_w).
+        Tuple of ``(patches, grid_size)`` where ``patches`` has shape ``[B, N, P*P*C]``
+        and ``grid_size`` is ``(num_patches_h, num_patches_w)``. Grid order within
+        ``N`` is row-major over ``(y, x)`` regardless of ``channels_last``.
     """
     B, C, H, W = x.shape
     ph, pw = patch_size
@@ -177,10 +189,18 @@ def batch_patchify(
         pad_h = (ph - H % ph) % ph
         pad_w = (pw - W % pw) % pw
         x = F.pad(x, (0, pad_w, 0, pad_h))
+        _, _, H, W = x.shape
 
     nh, nw = H // ph, W // pw
-    patches = x.view(B, C, nh, ph, nw, pw).permute(0, 2, 4, 3, 5, 1).reshape(B, nh * nw, ph * pw * C)
-    # FIXME confirm we want 'channels last' in the patch channel layout, egg ph, ph, C instead of C, ph, hw
+    # Inner flat layout within each patch:
+    #   channels_last=True  → (ph, pw, C) — channel index varies fastest (NaFlex default)
+    #   channels_last=False → (C, ph, pw) — channel index varies slowest (Gemma4 / HF native)
+    if channels_last:
+        patches = x.view(B, C, nh, ph, nw, pw).permute(0, 2, 4, 3, 5, 1)  # (B, nh, nw, ph, pw, C)
+    else:
+        patches = x.view(B, C, nh, ph, nw, pw).permute(0, 2, 4, 1, 3, 5)  # (B, nh, nw, C, ph, pw)
+    # [B, nh, nw, ...] -> [B, nh * nw, ph * pw * C]
+    patches = patches.reshape(B, nh * nw, ph * pw * C)
 
     return patches, (nh, nw)
 
@@ -190,6 +210,18 @@ def calculate_naflex_grid_sizes(_coord: torch.Tensor):
     max_y = _coord[:, :, 0].amax(dim=1) + 1
     max_x = _coord[:, :, 1].amax(dim=1) + 1
     return [(int(h.item()), int(w.item())) for h, w in zip(max_y, max_x)]
+
+
+def _normalize_naflex_grid_sample_coords(
+        patch_coord: torch.Tensor,
+        ar_preserving: bool = False,
+) -> torch.Tensor:
+    """Normalize NaFlex patch coordinates for ``grid_sample`` with ``align_corners=False``."""
+    shapes = patch_coord.amax(dim=1) + 1
+    if ar_preserving:
+        shapes = shapes.amax(dim=1, keepdim=True).expand_as(shapes)
+
+    return (2.0 * patch_coord.to(dtype=torch.float32) + 1.0) / shapes[:, None, :] - 1.0
 
 
 class NaFlexRopeIterator:
@@ -202,8 +234,8 @@ class NaFlexRopeIterator:
         unique_sizes: List[Tuple[int, int]],
         batch_size: int,
         seq_len: int,
-        dtype: torch.dtype,
         device: torch.device,
+        dtype: torch.dtype,
     ):
         self.rope = rope_module
         self.size_to_indices = size_to_indices
@@ -266,7 +298,8 @@ def get_block_fn(cfg: NaFlexVitCfg) -> Callable:
     use_eva_features = (
         cfg.attn_type in ('eva', 'rope') or
         cfg.rope_type not in ('', 'none') or  # Any ROPE type requires EVA blocks
-        cfg.swiglu_mlp
+        cfg.swiglu_mlp or
+        cfg.attn_gated  # gated attention is implemented on the EVA/rope attention path
     )
 
     if use_eva_features:
@@ -284,17 +317,21 @@ def get_block_fn(cfg: NaFlexVitCfg) -> Callable:
             scale_attn_inner=cfg.scale_attn_inner_norm,
             qkv_fused=cfg.qkv_fused,
             num_prefix_tokens=num_prefix_tokens,
+            rotate_half=cfg.rope_rotate_half or cfg.rope_type == 'mrope',  # MRoPE requires the half-rotation layout
+            gated_attn=cfg.attn_gated,
         )
     else:
         # Standard ViT block
         block_fn = cfg.block_fn or Block
+        block_kwargs = {}
         if cfg.scale_mlp_norm or cfg.scale_attn_inner_norm:
             # param names differ between EVA vs non-EVA block types
-            block_fn = partial(
-                block_fn,
-                scale_mlp_norm=cfg.scale_mlp_norm,
-                scale_attn_norm=cfg.scale_attn_inner_norm
-            )
+            block_kwargs['scale_mlp_norm'] = cfg.scale_mlp_norm
+            block_kwargs['scale_attn_norm'] = cfg.scale_attn_inner_norm
+        if cfg.attn_layer:
+            block_kwargs['attn_layer'] = cfg.attn_layer
+        if block_kwargs:
+            block_fn = partial(block_fn, **block_kwargs)
         return block_fn
 
 
@@ -361,6 +398,9 @@ class NaFlexEmbeds(nn.Module):
             norm_layer: Optional[Type[nn.Module]] = None,
             pos_drop_rate: float = 0.,
             enable_patch_interpolator: bool = False,
+            channels_last: bool = True,
+            device=None,
+            dtype=None,
     ) -> None:
         """Initialize NaFlexEmbeds module.
 
@@ -383,7 +423,9 @@ class NaFlexEmbeds(nn.Module):
             norm_layer: Default normalization layer.
             pos_drop_rate: Dropout rate for position embeddings.
             enable_patch_interpolator: Enable dynamic patch size support.
+            channels_last: Per-patch flat layout: True=(ph,pw,C) [NaFlex default], False=(C,ph,pw).
         """
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         self.has_class_token = class_token
         self.num_reg_tokens = reg_tokens
@@ -395,14 +437,15 @@ class NaFlexEmbeds(nn.Module):
         self.embed_dim = embed_dim
         self.dynamic_img_pad = dynamic_img_pad
         self.enable_patch_interpolator = enable_patch_interpolator
+        self.channels_last = channels_last
 
         # Calculate number of prefix tokens
         self.num_prefix_tokens = 1 if class_token else 0
         self.num_prefix_tokens += reg_tokens
 
         # Create class and register tokens
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim)) if class_token else None
-        self.reg_token = nn.Parameter(torch.zeros(1, reg_tokens, embed_dim)) if reg_tokens else None
+        self.cls_token = nn.Parameter(torch.empty(1, 1, embed_dim, **dd)) if class_token else None
+        self.reg_token = nn.Parameter(torch.empty(1, reg_tokens, embed_dim, **dd)) if reg_tokens else None
 
         # Calculate grid size and number of patches
         self.default_img_size: Optional[Tuple[int, int]] = None
@@ -424,7 +467,7 @@ class NaFlexEmbeds(nn.Module):
                 "`norm_layer` must be given when input_norm_layer=True"
             input_norm_layer = norm_layer if input_norm_layer is True else (input_norm_layer or None)
             self.norm_input = input_norm_layer(patch_dim) if input_norm_layer else None
-            self.proj = nn.Linear(patch_dim, embed_dim, bias=proj_bias)
+            self.proj = nn.Linear(patch_dim, embed_dim, bias=proj_bias, **dd)
             self.flatten = False
             self.is_linear = True
         else:
@@ -432,7 +475,12 @@ class NaFlexEmbeds(nn.Module):
             assert not input_norm_layer
             self.norm_input = None
             self.proj = nn.Conv2d(
-                in_chans, embed_dim, kernel_size=patch_size, stride=patch_size, bias=proj_bias
+                in_chans,
+                embed_dim,
+                kernel_size=patch_size,
+                stride=patch_size,
+                bias=proj_bias,
+                **dd,
             )
             self.flatten = True
             self.is_linear = False
@@ -445,9 +493,17 @@ class NaFlexEmbeds(nn.Module):
                 embed_dim=embed_dim,
                 interpolation=pos_embed_interp_mode,
                 antialias=True,
+                channels_last=channels_last,
+                device=device,
             )
         else:
             self.patch_interpolator = None
+
+        self.supports_patch_interpolation = bool(
+            self.is_linear
+            and self.patch_interpolator is not None
+            and self.norm_input is None
+        )
 
         # Create normalization layer after the projection
         assert not (proj_norm_layer is True and norm_layer is None), \
@@ -469,16 +525,48 @@ class NaFlexEmbeds(nn.Module):
             assert self.pos_embed_grid_size is not None
             h, w = self.pos_embed_grid_size
             self.pos_embed_type = 'factorized'
-            self.pos_embed_y = nn.Parameter(torch.randn(1, h, embed_dim) * .02)
-            self.pos_embed_x = nn.Parameter(torch.randn(1, w, embed_dim) * .02)
+            self.pos_embed_y = nn.Parameter(torch.empty(1, h, embed_dim, **dd))
+            self.pos_embed_x = nn.Parameter(torch.empty(1, w, embed_dim, **dd))
         else:
             assert self.pos_embed_grid_size is not None
             h, w = self.pos_embed_grid_size
-            self.pos_embed = nn.Parameter(torch.randn(1, h, w, embed_dim) * .02)
+            self.pos_embed = nn.Parameter(torch.empty(1, h, w, embed_dim, **dd))
             self.pos_embed_type = 'learned'
 
         # Dropout layer
         self.pos_drop = nn.Dropout(p=pos_drop_rate)
+
+        # TODO: skip init when on meta device when safe to do so
+        self.reset_parameters()
+
+    def reset_parameters(self) -> None:
+        if self.cls_token is not None:
+            nn.init.normal_(self.cls_token, std=1e-6)
+        if self.reg_token is not None:
+            nn.init.normal_(self.reg_token, std=1e-6)
+        if self.pos_embed is not None:
+            nn.init.normal_(self.pos_embed, std=.02)
+        if self.pos_embed_y is not None:
+            nn.init.normal_(self.pos_embed_y, std=.02)
+        if self.pos_embed_x is not None:
+            nn.init.normal_(self.pos_embed_x, std=.02)
+
+    @torch.jit.ignore
+    def prewarm_patch_interpolator(
+            self,
+            patch_sizes: Iterable[Union[int, Tuple[int, int]]],
+    ) -> None:
+        """Precompute patch interpolation matrices on the projection device.
+
+        The cache is cleared by any subsequent ``.to()`` / dtype conversion of the model,
+        so prewarm after the model has been moved to its execution device.
+
+        Args:
+            patch_sizes: Iterable of target patch sizes to precompute.
+        """
+        if not self.supports_patch_interpolation:
+            raise RuntimeError('Patch interpolation is not supported by this embedding configuration.')
+        self.patch_interpolator.prewarm(patch_sizes, device=self.proj.weight.device)
 
     def feature_info(self, location) -> Dict[str, Any]:
         """Get feature information for feature extraction.
@@ -578,7 +666,6 @@ class NaFlexEmbeds(nn.Module):
                 pos_embed_flat[:, :seq_len].expand(len(batch_indices), -1, -1)
             )
 
-    @disable_compiler
     def _apply_learned_naflex_pos_embed_grid_sample(
             self,
             x: torch.Tensor,
@@ -586,44 +673,28 @@ class NaFlexEmbeds(nn.Module):
     ) -> None:
         """Apply learned position embeddings to NaFlex batch using grid_sample.
 
-        Uses F.grid_sample for efficient interpolation of learned 2D position embeddings
-        based on patch coordinates. Based on proposal by https://github.com/stas-sl
+        Directly samples the learned 2D position embeddings at each patch coordinate,
+        avoiding a dense grid sized by the largest height and width in the batch.
+        Based on proposal by https://github.com/stas-sl
 
         Args:
             x: Input tensor to add position embeddings to [B, N, C]
             patch_coord: Patch coordinates [B, N, 2] with (y, x) values
         """
-        device = x.device
-        B, N, C = x.shape
-        shapes = patch_coord.max(dim=1).values + 1  # (B, 2) containing [h_i, w_i]
-
-        if self.pos_embed_ar_preserving:
-            L_i = shapes.amax(dim=1)  # (B,) max(h_i, w_i)
-            L_global = L_i.amax()
-            grid_size_y = grid_size_x = L_global
-            scale_x = scale_y = L_global / L_i  # uniform zoom (B,)
-        else:
-            grid_size_y, grid_size_x = shapes.amax(dim=0)  # (2,)
-            scale_y = grid_size_y / shapes[:, 0]  # vertical zoom (B,)
-            scale_x = grid_size_x / shapes[:, 1]  # horizontal zoom (B,)
-
-        theta = torch.zeros(B, 2, 3, device=device, dtype=torch.float32)
-        theta[:, 0, 0] = scale_x
-        theta[:, 1, 1] = scale_y
-        theta[:, 0, 2] = scale_x - 1  # translate x
-        theta[:, 1, 2] = scale_y - 1  # translate y
-
-        grid = F.affine_grid(theta, (B, C, grid_size_y, grid_size_x), align_corners=False)
+        B = x.shape[0]
+        grid = _normalize_naflex_grid_sample_coords(
+            patch_coord,
+            ar_preserving=self.pos_embed_ar_preserving,
+        ).flip(-1).unsqueeze(2)  # (B, N, 1, 2), grid_sample coordinate order is (x, y)
         pos_embed = F.grid_sample(
             self.pos_embed.permute(0, 3, 1, 2).expand(B, -1, -1, -1).float(),
             grid,
             mode=self.pos_embed_interp_mode,
             align_corners=False,
             padding_mode='border',
-        ).to(dtype=x.dtype)  # (B, C, H_out, W_out)
+        ).to(dtype=x.dtype)  # (B, C, N, 1)
 
-        bi = torch.arange(B, device=device).unsqueeze(1)
-        x += pos_embed[bi, :, patch_coord[..., 0], patch_coord[..., 1]]  # NOTE leave as '+='
+        x += pos_embed.squeeze(-1).transpose(1, 2)  # NOTE leave as '+='
 
     def _apply_learned_pos_embed(
             self,
@@ -767,7 +838,7 @@ class NaFlexEmbeds(nn.Module):
         pe_x = _interp1d(self.pos_embed_x, scale=scale_x, out_length=grid_size_x)
         pe_y = _interp1d(self.pos_embed_y, scale=scale_y, out_length=grid_size_y)
 
-        bi = torch.arange(B, device=device).unsqueeze(1)
+        bi = torch.arange(B, device=device, dtype=torch.long).unsqueeze(1)
         x += pe_x[bi, :, 0, patch_coord[..., 1]] + pe_y[bi, :, 0, patch_coord[..., 0]]
 
     def _apply_factorized_pos_embed(
@@ -840,22 +911,25 @@ class NaFlexEmbeds(nn.Module):
             if patch_coord is None:
                 # Standard 2D (B, C, H, W) mode
                 _assert(x.ndim == 4, 'Expecting 2D image input with input ndim == 4')
-                x, grid_size = batch_patchify(x, self.patch_size, pad=self.dynamic_img_pad)
+                x, grid_size = batch_patchify(
+                    x, self.patch_size, pad=self.dynamic_img_pad, channels_last=self.channels_last)
             else:
-                # Pre-patchified NaFlex mode
-                # Variable patch size mode: [B, N, Ph, Pw, C], normal mode: [B, N, P*P*C]
+                # Pre-patchified NaFlex mode. Variable patch size (ndim==5) is channels_last
+                # [B, N, Ph, Pw, C] or channels_first [B, N, C, Ph, Pw]; normal mode (ndim==3): [B, N, P*P*C].
                 _assert(x.ndim == 5 or x.ndim == 3, 'Expecting patchified input with ndim == 3 or 5.')
 
             # Handle variable patch size projection
             if self.enable_patch_interpolator and x.ndim == 5:
                 _assert(self.norm_input is None, 'input norm not supported with patch resizing')
 
+                # patch (Ph, Pw) sits at axes (2, 3) for channels_last, (3, 4) for channels_first
+                patch_hw = tuple(x.shape[2:4] if self.channels_last else x.shape[3:5])
                 # Apply projection with interpolation
                 x = self.patch_interpolator(
                     x,
                     self.proj.weight,
                     self.proj.bias,
-                    patch_size=tuple(x.shape[2:4]),  # patch size from [B, N, Ph, Pw, C] shape
+                    patch_size=patch_hw,
                     is_linear=True,
                 )
             else:
@@ -1079,6 +1153,8 @@ class NaFlexVit(nn.Module):
             in_chans: int = 3,
             num_classes: int = 1000,
             img_size: Optional[Union[int, Tuple[int, int]]] = None,
+            device=None,
+            dtype=None,
             **kwargs,
     ) -> None:
         """Initialize NaFlexVit model.
@@ -1091,6 +1167,7 @@ class NaFlexVit(nn.Module):
             **kwargs: Additional config parameters to override cfg values.
         """
         super().__init__()
+        dd = {'device': device, 'dtype': dtype}
 
         # Initialize config
         cfg = cfg or NaFlexVitCfg()
@@ -1111,6 +1188,7 @@ class NaFlexVit(nn.Module):
 
         # Store instance variables
         self.num_classes = num_classes
+        self.in_chans = in_chans
         self.global_pool = cfg.global_pool
         self.num_features = self.head_hidden_size = self.embed_dim = cfg.embed_dim  # for consistency with other models
         self.num_prefix_tokens = 1 if cfg.class_token else 0
@@ -1118,6 +1196,7 @@ class NaFlexVit(nn.Module):
         self.num_reg_tokens = cfg.reg_tokens
         self.has_class_token = cfg.class_token
         self.pool_include_prefix = cfg.pool_include_prefix
+        self.use_key_only_attn_mask = cfg.use_key_only_attn_mask
         self.grad_checkpointing = False
 
         # Initialize embedding module (includes patch, position embedding, and class/reg tokens)
@@ -1140,14 +1219,19 @@ class NaFlexVit(nn.Module):
             proj_norm_layer=embed_norm_layer,
             pos_drop_rate=cfg.pos_drop_rate,
             enable_patch_interpolator=getattr(cfg, 'enable_patch_interpolator', False),
+            channels_last=getattr(cfg, 'patchify_channels_last', True),
+            **dd,
         )
-        self.norm_pre = norm_layer(cfg.embed_dim) if cfg.pre_norm else nn.Identity()
+        self.supports_patch_interpolation = self.embeds.supports_patch_interpolation
+        self.norm_pre = norm_layer(cfg.embed_dim, **dd) if cfg.pre_norm else nn.Identity()
 
         # ROPE position embeddings at model level
         self.rope: Optional[nn.Module] = None
         self.rope_is_mixed = False
         if cfg.rope_type and cfg.rope_type != 'none':
-            from timm.layers.pos_embed_sincos import RotaryEmbeddingCat, RotaryEmbeddingMixed
+            from timm.layers.pos_embed_sincos import (
+                RotaryEmbeddingCat, RotaryEmbeddingDinoV3, RotaryEmbeddingMixed, RotaryEmbeddingMRope,
+            )
             if cfg.rope_type == 'mixed':
                 self.rope = RotaryEmbeddingMixed(
                     cfg.embed_dim,
@@ -1156,6 +1240,7 @@ class NaFlexVit(nn.Module):
                     temperature=cfg.rope_temperature,
                     feat_shape=None,  # Dynamic shapes for NaFlex
                     grid_indexing=cfg.rope_grid_indexing,
+                    **dd,
                 )
                 self.rope_is_mixed = True
             elif cfg.rope_type == 'axial':
@@ -1167,6 +1252,27 @@ class NaFlexVit(nn.Module):
                     ref_feat_shape=cfg.rope_ref_feat_shape,
                     grid_offset=cfg.rope_grid_offset,
                     grid_indexing=cfg.rope_grid_indexing,
+                    **dd,
+                )
+                self.rope_is_mixed = False
+            elif cfg.rope_type == 'dinov3':
+                self.rope = RotaryEmbeddingDinoV3(
+                    cfg.embed_dim // cfg.num_heads,
+                    temperature=cfg.rope_temperature,
+                    feat_shape=None,  # Dynamic shapes for NaFlex
+                    grid_indexing=cfg.rope_grid_indexing,
+                    rotate_half=cfg.rope_rotate_half,
+                    **dd,
+                )
+                self.rope_is_mixed = False
+            elif cfg.rope_type == 'mrope':
+                assert cfg.rope_mrope_section is not None, "rope_type='mrope' requires cfg.rope_mrope_section"
+                self.rope = RotaryEmbeddingMRope(
+                    cfg.embed_dim // cfg.num_heads,
+                    mrope_section=cfg.rope_mrope_section,
+                    temperature=cfg.rope_temperature,
+                    grid_indexing=cfg.rope_grid_indexing,
+                    **dd,
                 )
                 self.rope_is_mixed = False
             else:
@@ -1182,7 +1288,7 @@ class NaFlexVit(nn.Module):
             self.patch_drop = None
 
         # Transformer blocks
-        dpr = [x.item() for x in torch.linspace(0, cfg.drop_path_rate, cfg.depth)]  # stochastic depth decay rule
+        dpr = calculate_drop_path_rates(cfg.drop_path_rate, cfg.depth)  # stochastic depth decay rule
         # Create transformer blocks
         self.blocks = nn.Sequential(*[
             block_fn(
@@ -1199,6 +1305,8 @@ class NaFlexVit(nn.Module):
                 norm_layer=norm_layer,
                 act_layer=act_layer,
                 mlp_layer=mlp_layer,
+                depth=i,
+                **dd,
             )
             for i in range(cfg.depth)
         ])
@@ -1210,7 +1318,7 @@ class NaFlexVit(nn.Module):
             for i in range(cfg.depth)
         ]
 
-        self.norm = norm_layer(cfg.embed_dim) if cfg.final_norm and not cfg.fc_norm else nn.Identity()
+        self.norm = norm_layer(cfg.embed_dim, **dd) if cfg.final_norm and not cfg.fc_norm else nn.Identity()
 
         # Classifier Head
         if cfg.global_pool == 'map':
@@ -1220,6 +1328,7 @@ class NaFlexVit(nn.Module):
                 mlp_ratio=cfg.attn_pool_mlp_ratio or cfg.mlp_ratio,
                 norm_layer=norm_layer,
                 act_layer=act_layer,
+                **dd,
             )
         else:
             self.attn_pool = None
@@ -1228,14 +1337,14 @@ class NaFlexVit(nn.Module):
         fc_norm = cfg.fc_norm
         if fc_norm is None:
             fc_norm = cfg.global_pool == 'avg'
-        self.fc_norm = norm_layer(cfg.embed_dim) if cfg.final_norm and fc_norm else nn.Identity()
+        self.fc_norm = norm_layer(cfg.embed_dim, **dd) if cfg.final_norm and fc_norm else nn.Identity()
         self.head_drop = nn.Dropout(cfg.drop_rate)
-        self.head = nn.Linear(self.embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = nn.Linear(self.embed_dim, num_classes, **dd) if num_classes > 0 else nn.Identity()
 
-        if cfg.weight_init != 'skip':
-            self.init_weights(cfg.weight_init)
-        if cfg.fix_init:
-            self.fix_init_weight()
+        self.weight_init_mode = cfg.weight_init
+        self.fix_init = cfg.fix_init
+        # TODO: skip init when on meta device when safe to do so
+        self.init_weights(cfg.weight_init, needs_reset=False)
 
     def fix_init_weight(self) -> None:
         """Apply initialization weight fix with layer-wise scaling."""
@@ -1254,24 +1363,32 @@ class NaFlexVit(nn.Module):
                 rescale(layer.mlp_out_proj.weight, layer_id + 1)
 
 
-    def init_weights(self, mode: str = '') -> None:
+    def init_weights(self, mode: str = '', needs_reset: bool = True) -> None:
         """Initialize model weights according to specified scheme.
 
         Args:
             mode: Initialization mode ('jax', 'jax_nlhb', 'moco', or '')
+            needs_reset: If True, call reset_parameters() on modules (default for after to_empty()).
+                If False, skip reset_parameters() (for __init__ where modules already self-initialized).
         """
+        mode = mode or self.weight_init_mode
         assert mode in ('jax', 'jax_nlhb', 'moco', '')
         head_bias = -math.log(self.num_classes) if 'nlhb' in mode else 0.
-        named_apply(get_init_weights_vit(mode, head_bias), self)
+
+        named_apply(get_init_weights_vit(mode, head_bias, needs_reset=needs_reset), self)
+
+        if self.fix_init:
+            self.fix_init_weight()
 
     @torch.jit.ignore()
     def load_pretrained(self, checkpoint_path: str, prefix: str = '') -> None:
         # Custom loading for the new model structure
         from .vision_transformer import _load_weights as _orig_load_weights
+        from ._helpers import _torch_load
 
         def _load_weights_adapter(model, checkpoint_path, prefix=''):
             """Adapter function to handle the different model structure"""
-            state_dict = torch.load(checkpoint_path, map_location='cpu')
+            state_dict = _torch_load(checkpoint_path, map_location='cpu', weights_only=True)
             if isinstance(state_dict, dict) and 'state_dict' in state_dict:
                 state_dict = state_dict['state_dict']
 
@@ -1301,6 +1418,31 @@ class NaFlexVit(nn.Module):
         if self.rope and hasattr(self.rope, 'no_weight_decay'):
             skip_list.update(self.rope.no_weight_decay())
         return skip_list
+
+    @torch.jit.ignore
+    def get_patch_size(self) -> Tuple[int, int]:
+        """Return the 2-tuple patch size. For NaFlex dataloader / transform wiring."""
+        return self.embeds.patch_size
+
+    @torch.jit.ignore
+    def prewarm_patch_interpolator(
+            self,
+            patch_sizes: Iterable[Union[int, Tuple[int, int]]],
+    ) -> None:
+        """Precompute patch interpolation matrices before captured execution.
+
+        Useful before ``torch.compile`` so the first forward at a non-base patch size
+        does not build a cache entry inside the captured graph. The cache is cleared by
+        any subsequent ``.to()`` / dtype conversion, so prewarm after moving the model
+        to its execution device.
+
+        Args:
+            patch_sizes: Iterable of target patch sizes to precompute.
+
+        Raises:
+            RuntimeError: If this model's embedding config does not support patch interpolation.
+        """
+        self.embeds.prewarm_patch_interpolator(patch_sizes)
 
     @torch.jit.ignore
     def group_matcher(self, coarse: bool = False) -> Dict:
@@ -1473,6 +1615,8 @@ class NaFlexVit(nn.Module):
             attn_mask = create_attention_mask(
                 patch_valid,
                 num_prefix_tokens=self.num_prefix_tokens,
+                symmetric=not self.use_key_only_attn_mask,
+                q_len=1 if self.use_key_only_attn_mask else None,
                 dtype=x.dtype
             )
 
@@ -1515,21 +1659,37 @@ class NaFlexVit(nn.Module):
             attn_mask: Optional attention mask for masked attention
         Returns:
             A tuple with (final_features, intermediates), a list of intermediate features, or a dictionary containing
-            'image_features' and 'image_intermediates' (and optionally 'image_intermediates_prefix')
-        """
+            'image_features' and 'image_intermediates' (and optionally 'image_intermediates_prefix').
 
-        # FIXME unfinished / untested
+        NaFlex (dict / pre-patchified) inputs: NLC output only (per-sample grids are variable, a single
+        spatial reshape is undefined); with ``output_dict=True`` the result also carries 'patch_valid'
+        aligned with the spatial intermediates so consumers can mask padding or scatter via patch_coord.
+        """
 
         assert output_fmt in ('NCHW', 'NLC'), 'Output format must be one of NCHW or NLC.'
         reshape = output_fmt == 'NCHW'
         intermediates = []
         take_indices, max_index = feature_take_indices(len(self.blocks), indices)
-        if isinstance(x, Dict):
-            # Handle dictionary input from NaFlex collator
+        if isinstance(x, dict):
+            # Dictionary input from the NaFlex collator. Per-sample grids are variable
+            # (native aspect) and padding tokens belong to no grid, so a single spatial
+            # reshape is undefined -- NLC output only.
+            if reshape:
+                raise ValueError(
+                    'output_fmt="NCHW" is not supported for NaFlex (dict) inputs, use "NLC". '
+                    'Per-sample grids vary; reconstruct spatial maps downstream via patch_coord.')
             patch_coord = x['patch_coord']
-            patch_valid = x['patch_valid']
+            patch_valid = x.get('patch_valid', patch_valid)
+            attn_mask = x.get('attn_mask', attn_mask)
             patches = x['patches']
-            assert False, 'WIP, patch mode needs more work'
+            H = W = None
+            if not output_dict and self.training and self.patch_drop is not None:
+                # patch dropout gathers the token sequence, so the caller's input patch_valid no
+                # longer aligns with the returned tokens -- the gathered mask is only surfaced in
+                # dict output mode. Tuple mode is fine at eval / without patch dropout.
+                raise ValueError(
+                    'NaFlex forward_intermediates with active patch dropout requires '
+                    'output_dict=True to return the gathered patch_valid.')
         else:
             patches = x
             height, width = x.shape[-2:]
@@ -1546,6 +1706,8 @@ class NaFlexVit(nn.Module):
         rope_embeds = embeds.get('rope_embeds', None)
         keep_indices = embeds.get('keep_indices', None)
         attn_mask = embeds.get('attn_mask', None)
+        # validity aligned with the token sequence (gathered through patch dropout)
+        patch_valid = embeds.get('patch_valid', patch_valid)
 
         # Forward pass through blocks
         if torch.jit.is_scripting() or not stop_early:  # can't slice blocks in torchscript
@@ -1605,8 +1767,6 @@ class NaFlexVit(nn.Module):
                 for y in intermediates
             ]
 
-        # FIXME always use dict for NaFlex mode to return masks and more?
-
         # For dictionary output
         if output_dict:
             result_dict = {}
@@ -1614,6 +1774,10 @@ class NaFlexVit(nn.Module):
             result_dict['image_intermediates'] = intermediates
             if prefix_tokens is not None and return_prefix_tokens:
                 result_dict['image_intermediates_prefix'] = prefix_tokens
+            if patch_valid is not None:
+                # NaFlex mode: patch-only validity aligned with the (spatial) intermediates,
+                # padding excluded -- consumers need this to mask or scatter tokens
+                result_dict['patch_valid'] = patch_valid
 
             # Only include features if not intermediates_only
             if not intermediates_only:
@@ -1761,7 +1925,7 @@ class NaFlexVit(nn.Module):
         Returns:
             Model output tensor.
         """
-        input_is_dict = isinstance(x, Dict)
+        input_is_dict = isinstance(x, dict)
         naflex_mode = input_is_dict or patch_coord is not None
         if naflex_mode:
             if input_is_dict:
@@ -1805,16 +1969,21 @@ def _debug_dump_patches(x):
         save_image(patch, f'patch_{i}.jpg', normalize=True)
 
 
-def get_init_weights_vit(mode: str = 'jax', head_bias: float = 0.0) -> Callable:
+def get_init_weights_vit(mode: str = 'jax', head_bias: float = 0.0, needs_reset: bool = True) -> Callable:
     """Function imported from vision_transformer.py to maintain compatibility"""
-    from .vision_transformer import init_weights_vit_jax, init_weights_vit_moco, init_weights_vit_timm
+    from .vision_transformer import (
+        init_weights_vit_jax,
+        init_weights_vit_moco,
+        init_weights_vit_timm,
+        init_weights_reset_parameters,
+    )
 
     if 'jax' in mode:
-        return partial(init_weights_vit_jax, head_bias=head_bias)
+        return partial(init_weights_vit_jax, head_bias=head_bias, needs_reset=needs_reset)
     elif 'moco' in mode:
-        return init_weights_vit_moco
+        return partial(init_weights_vit_moco, needs_reset=needs_reset)
     else:
-        return init_weights_vit_timm
+        return partial(init_weights_vit_timm, needs_reset=needs_reset)
 
 
 def checkpoint_filter_fn(state_dict: Dict[str, Any], model: NaFlexVit) -> Dict[str, Any]:
@@ -1920,6 +2089,8 @@ default_cfgs = generate_default_cfgs({
         hf_hub_id='timm/',
     ),
     'naflexvit_base_patch16_map.untrained': _cfg(),
+    'naflexvit_so150m2_patch16_reg1_gap.untrained': _cfg(),
+    'naflexvit_so150m2_patch16_reg1_map.untrained': _cfg(),
 
     # SigLIP-2 NaFlex vit encoder weights
     'naflexvit_base_patch16_siglip.v2_webli': _cfg(
@@ -2021,7 +2192,11 @@ def _create_naflexvit_from_eva(
     rope_temperature = kwargs.pop('rope_temperature', 10000.)
     rope_grid_offset = kwargs.pop('rope_grid_offset', 0.)
     rope_grid_indexing = kwargs.pop('rope_grid_indexing', 'ij')
-    if use_rot_pos_emb:
+    # Preserve explicit rope_type from model config (e.g. 'dinov3') if present
+    explicit_rope_type = kwargs.pop('rope_type', None)
+    if explicit_rope_type and explicit_rope_type != 'none':
+        rope_type = explicit_rope_type
+    elif use_rot_pos_emb:
         rope_type = 'mixed' if rope_mixed_mode else 'axial'
     else:
         rope_type = 'none'
@@ -2048,6 +2223,7 @@ def _create_naflexvit_from_eva(
         'rope_temperature': rope_temperature,
         'rope_grid_offset': rope_grid_offset,
         'rope_grid_indexing': rope_grid_indexing,
+        'rope_rotate_half': kwargs.pop('rope_rotate_half', False),
         'rope_ref_feat_shape': kwargs.get('ref_feat_shape', None),
         'attn_type': kwargs.pop('attn_type', 'eva'),
         'swiglu_mlp': kwargs.pop('swiglu_mlp', False),

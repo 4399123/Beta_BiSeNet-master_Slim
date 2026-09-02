@@ -20,6 +20,8 @@ https://github.com/lucidrains/lambda-networks
 
 Hacked together by / Copyright 2021 Ross Wightman
 """
+from typing import Optional, Tuple
+
 import torch
 from torch import nn
 import torch.nn.functional as F
@@ -29,9 +31,12 @@ from .helpers import to_2tuple, make_divisible
 from .weight_init import trunc_normal_
 
 
-def rel_pos_indices(size):
+def rel_pos_indices(size, device=None):
     size = to_2tuple(size)
-    pos = torch.stack(ndgrid(torch.arange(size[0]), torch.arange(size[1]))).flatten(1)
+    pos = torch.stack(ndgrid(
+        torch.arange(size[0], device=device, dtype=torch.long),
+        torch.arange(size[1], device=device, dtype=torch.long),
+    )).flatten(1)
     rel_pos = pos[:, None, :] - pos[:, :, None]
     rel_pos[0] += size[0] - 1
     rel_pos[1] += size[1] - 1
@@ -55,19 +60,31 @@ class LambdaLayer(nn.Module):
       * as seen above, attn_ratio determines the ratio of q and k relative to the output if dim_head not set
 
     Args:
-        dim (int): input dimension to the module
-        dim_out (int): output dimension of the module, same as dim if not set
-        feat_size (Tuple[int, int]): size of input feature_map for relative pos variant H, W
-        stride (int): output stride of the module, avg pool used if stride == 2
-        num_heads (int): parallel attention heads.
-        dim_head (int): dimension of query and key heads, calculated from dim_out * attn_ratio // num_heads if not set
-        r (int): local lambda convolution radius. Use lambda conv if set, else relative pos if not. (default: 9)
-        qk_ratio (float): ratio of q and k dimensions to output dimension when dim_head not set. (default: 1.0)
-        qkv_bias (bool): add bias to q, k, and v projections
+        dim: input dimension to the module
+        dim_out: output dimension of the module, same as dim if not set
+        feat_size: size of input feature_map for relative pos variant H, W
+        stride: output stride of the module, avg pool used if stride == 2
+        num_heads: parallel attention heads.
+        dim_head: dimension of query and key heads, calculated from dim_out * attn_ratio // num_heads if not set
+        r: local lambda convolution radius. Use lambda conv if set, else relative pos if not. (default: 9)
+        qk_ratio: ratio of q and k dimensions to output dimension when dim_head not set. (default: 1.0)
+        qkv_bias: add bias to q, k, and v projections
     """
     def __init__(
-            self, dim, dim_out=None, feat_size=None, stride=1, num_heads=4, dim_head=16, r=9,
-            qk_ratio=1.0, qkv_bias=False):
+            self,
+            dim: int,
+            dim_out: Optional[int] = None,
+            feat_size: Optional[Tuple[int, int]] = None,
+            stride: int = 1,
+            num_heads: int = 4,
+            dim_head: int = 16,
+            r: int = 9,
+            qk_ratio: float = 1.0,
+            qkv_bias: bool = False,
+            device=None,
+            dtype=None,
+    ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         dim_out = dim_out or dim
         assert dim_out % num_heads == 0, ' should be divided by num_heads'
@@ -78,34 +95,54 @@ class LambdaLayer(nn.Module):
         self.qkv = nn.Conv2d(
             dim,
             num_heads * self.dim_qk + self.dim_qk + self.dim_v,
-            kernel_size=1, bias=qkv_bias)
-        self.norm_q = nn.BatchNorm2d(num_heads * self.dim_qk)
-        self.norm_v = nn.BatchNorm2d(self.dim_v)
+            kernel_size=1,
+            bias=qkv_bias,
+            **dd,
+        )
+        self.norm_q = nn.BatchNorm2d(num_heads * self.dim_qk, **dd)
+        self.norm_v = nn.BatchNorm2d(self.dim_v, **dd)
 
         if r is not None:
             # local lambda convolution for pos
-            self.conv_lambda = nn.Conv3d(1, self.dim_qk, (r, r, 1), padding=(r // 2, r // 2, 0))
+            self.conv_lambda = nn.Conv3d(1, self.dim_qk, (r, r, 1), padding=(r // 2, r // 2, 0), **dd)
             self.pos_emb = None
             self.rel_pos_indices = None
+            self.feat_size = None
         else:
             # relative pos embedding
             assert feat_size is not None
             feat_size = to_2tuple(feat_size)
+            self.feat_size = feat_size
             rel_size = [2 * s - 1 for s in feat_size]
+            M = feat_size[0] * feat_size[1]
             self.conv_lambda = None
-            self.pos_emb = nn.Parameter(torch.zeros(rel_size[0], rel_size[1], self.dim_qk))
-            self.register_buffer('rel_pos_indices', rel_pos_indices(feat_size), persistent=False)
+            self.pos_emb = nn.Parameter(torch.empty(rel_size[0], rel_size[1], self.dim_qk, **dd))
+            self.register_buffer(
+                'rel_pos_indices',
+                torch.empty((2, M, M), device=device, dtype=torch.long),
+                persistent=False,
+            )
 
         self.pool = nn.AvgPool2d(2, 2) if stride == 2 else nn.Identity()
 
+        # TODO: skip init when on meta device when safe to do so
         self.reset_parameters()
 
-    def reset_parameters(self):
+    def reset_parameters(self) -> None:
+        """Initialize parameters and buffers."""
         trunc_normal_(self.qkv.weight, std=self.qkv.weight.shape[1] ** -0.5)  # fan-in
         if self.conv_lambda is not None:
             trunc_normal_(self.conv_lambda.weight, std=self.dim_qk ** -0.5)
         if self.pos_emb is not None:
             trunc_normal_(self.pos_emb, std=.02)
+        self._init_buffers()
+
+    def _init_buffers(self) -> None:
+        """Compute and fill non-persistent buffer values."""
+        if self.rel_pos_indices is not None:
+            self.rel_pos_indices.copy_(
+                rel_pos_indices(self.feat_size, device=self.rel_pos_indices.device)
+            )
 
     def forward(self, x):
         B, C, H, W = x.shape
@@ -132,3 +169,7 @@ class LambdaLayer(nn.Module):
         out = (content_out + position_out).transpose(-1, -2).reshape(B, C, H, W)  # B, C (num_heads * V), H, W
         out = self.pool(out)
         return out
+
+    def init_non_persistent_buffers(self) -> None:
+        """Initialize non-persistent buffers."""
+        self._init_buffers()

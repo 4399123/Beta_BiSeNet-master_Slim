@@ -60,7 +60,10 @@ class MobileNetV5MultiScaleFusionAdapter(nn.Module):
         noskip: bool = True,
         act_layer: Optional[LayerType] = None,
         norm_layer: Optional[LayerType] = None,
+        device=None,
+        dtype=None,
   ):
+    dd = {'device': device, 'dtype': dtype}
     super().__init__()
     self.in_channels = sum(in_chs) if isinstance(in_chs, Sequence) else in_chs
     self.out_channels = out_chs
@@ -81,9 +84,10 @@ class MobileNetV5MultiScaleFusionAdapter(nn.Module):
         norm_layer=norm_layer,
         noskip=self.noskip,
         layer_scale_init_value=self.layer_scale_init_value,
+        **dd,
     )
 
-    self.norm = norm_layer(self.out_channels)
+    self.norm = norm_layer(self.out_channels, **dd)
 
   def forward(self, inputs: List[torch.Tensor]) -> torch.Tensor:
     # Inputs list of [B, C, H, W] tensors
@@ -146,6 +150,8 @@ class MobileNetV5(nn.Module):
             drop_path_rate: float = 0.,
             layer_scale_init_value: Optional[float] = None,
             global_pool: str = 'avg',
+            device=None,
+            dtype=None,
     ):
         """
         Args:
@@ -169,11 +175,13 @@ class MobileNetV5(nn.Module):
             global_pool: Type of pooling to use for global pooling features of the FC head.
         """
         super().__init__()
+        dd = {'device': device, 'dtype': dtype}
         act_layer = act_layer or _GELU
         norm_layer = get_norm_layer(norm_layer) or RmsNorm2d
         norm_act_layer = get_norm_act_layer(norm_layer, act_layer)
         se_layer = se_layer or SqueezeExcite
         self.num_classes = num_classes
+        self.in_chans = in_chans
         self.drop_rate = drop_rate
         self.grad_checkpointing = False
         self.msfa_indices = msfa_indices
@@ -191,6 +199,7 @@ class MobileNetV5(nn.Module):
             bias=stem_bias,
             norm_layer=norm_layer,
             act_layer=act_layer,
+            **dd,
         )
 
         # Middle stages (IR/ER/DS Blocks)
@@ -205,6 +214,7 @@ class MobileNetV5(nn.Module):
             se_layer=se_layer,
             drop_path_rate=drop_path_rate,
             layer_scale_init_value=layer_scale_init_value,
+            **dd,
         )
         self.blocks = nn.Sequential(*builder(stem_size, block_args))
         self.feature_info = builder.features
@@ -224,6 +234,7 @@ class MobileNetV5(nn.Module):
                 output_resolution=self.msfa_output_resolution,
                 norm_layer=norm_layer,
                 act_layer=act_layer,
+                **dd,
             )
             self.global_pool = SelectAdaptivePool2d(pool_type=global_pool)
             self.conv_head = None
@@ -235,11 +246,11 @@ class MobileNetV5(nn.Module):
             self.global_pool = SelectAdaptivePool2d(pool_type=global_pool)
             num_pooled_chs = self.num_features * self.global_pool.feat_mult()
             # mobilenet-v4 style post-pooling PW conv is followed by a norm+act layer
-            self.conv_head = create_conv2d(num_pooled_chs, self.head_hidden_size, 1, padding=pad_type)
-            self.norm_head = norm_act_layer(self.head_hidden_size)
+            self.conv_head = create_conv2d(num_pooled_chs, self.head_hidden_size, 1, padding=pad_type, **dd)
+            self.norm_head = norm_act_layer(self.head_hidden_size, **dd)
 
         self.flatten = nn.Flatten(1) if global_pool else nn.Identity()  # don't flatten if pooling disabled
-        self.classifier = Linear(self.head_hidden_size, num_classes) if num_classes > 0 else nn.Identity()
+        self.classifier = Linear(self.head_hidden_size, num_classes, **dd) if num_classes > 0 else nn.Identity()
 
         efficientnet_init_weights(self)
 
@@ -426,12 +437,16 @@ class MobileNetV5Encoder(nn.Module):
             drop_rate: float = 0.,
             drop_path_rate: float = 0.,
             layer_scale_init_value: Optional[float] = None,
+            device=None,
+            dtype=None,
     ):
         super().__init__()
+        dd = {'device': device, 'dtype': dtype}
         act_layer = act_layer or _GELU
         norm_layer = get_norm_layer(norm_layer) or RmsNorm2d
         se_layer = se_layer or SqueezeExcite
         self.num_classes = 0    # Exists to satisfy ._hub module APIs.
+        self.in_chans = in_chans
         self.drop_rate = drop_rate
         self.grad_checkpointing = False
 
@@ -447,6 +462,7 @@ class MobileNetV5Encoder(nn.Module):
             bias=stem_bias,
             norm_layer=norm_layer,
             act_layer=act_layer,
+            **dd,
         )
 
         builder = EfficientNetBuilder(
@@ -460,6 +476,7 @@ class MobileNetV5Encoder(nn.Module):
             se_layer=se_layer,
             drop_path_rate=drop_path_rate,
             layer_scale_init_value=layer_scale_init_value,
+            **dd,
         )
         self.blocks = nn.Sequential(*builder(stem_size, block_args))
         self.feature_info = builder.features
@@ -477,6 +494,7 @@ class MobileNetV5Encoder(nn.Module):
             output_resolution=self.msfa_output_resolution,
             norm_layer=norm_layer,
             act_layer=act_layer,
+            **dd,
         )
 
         efficientnet_init_weights(self)
@@ -826,7 +844,8 @@ default_cfgs = generate_default_cfgs({
         hf_hub_id='timm/',
         mean=(0., 0., 0.), std=(1., 1., 1.),
         input_size=(3, 768, 768),
-        num_classes=0),
+        num_classes=0,
+        license='gemma'),
 
     # WIP classification configs for testing
     'mobilenetv5_base.untrained': _cfg(

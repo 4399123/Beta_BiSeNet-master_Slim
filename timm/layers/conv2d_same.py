@@ -5,7 +5,7 @@ Hacked together by / Copyright 2020 Ross Wightman
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from typing import Tuple, Optional
+from typing import Tuple, Optional, Union
 
 from ._fx import register_notrace_module
 from .config import is_exportable, is_scriptable
@@ -35,24 +35,39 @@ class Conv2dSame(nn.Conv2d):
 
     def __init__(
             self,
+            in_channels: int,
+            out_channels: int,
+            kernel_size: Union[int, Tuple[int, int]],
+            stride: Union[int, Tuple[int, int]] = 1,
+            padding: Union[int, Tuple[int, int], str] = 0,
+            dilation: Union[int, Tuple[int, int]] = 1,
+            groups: int = 1,
+            bias: bool = True,
+            device=None,
+            dtype=None,
+    ):
+        super().__init__(
             in_channels,
             out_channels,
             kernel_size,
-            stride=1,
-            padding=0,
-            dilation=1,
-            groups=1,
-            bias=True,
-    ):
-        super(Conv2dSame, self).__init__(
-            in_channels, out_channels, kernel_size,
-            stride, 0, dilation, groups, bias,
+            stride,
+            0,  # padding
+            dilation,
+            groups,
+            bias,
+            device=device,
+            dtype=dtype,
         )
 
     def forward(self, x):
         return conv2d_same(
-            x, self.weight, self.bias,
-            self.stride, self.padding, self.dilation, self.groups,
+            x,
+            self.weight,
+            self.bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
         )
 
 
@@ -65,18 +80,28 @@ class Conv2dSameExport(nn.Conv2d):
     # pylint: disable=unused-argument
     def __init__(
             self,
+            in_channels: int,
+            out_channels: int,
+            kernel_size: Union[int, Tuple[int, int]],
+            stride: Union[int, Tuple[int, int]] = 1,
+            padding: Union[int, Tuple[int, int], str] = 0,
+            dilation: Union[int, Tuple[int, int]] = 1,
+            groups: int = 1,
+            bias: bool = True,
+            device=None,
+            dtype=None,
+    ):
+        super().__init__(
             in_channels,
             out_channels,
             kernel_size,
-            stride=1,
-            padding=0,
-            dilation=1,
-            groups=1,
-            bias=True,
-    ):
-        super(Conv2dSameExport, self).__init__(
-            in_channels, out_channels, kernel_size,
-            stride, 0, dilation, groups, bias,
+            stride,
+            0,  # padding
+            dilation,
+            groups,
+            bias,
+            device=device,
+            dtype=dtype,
         )
         self.pad = None
         self.pad_input_size = (0, 0)
@@ -90,8 +115,13 @@ class Conv2dSameExport(nn.Conv2d):
 
         x = self.pad(x)
         return F.conv2d(
-            x, self.weight, self.bias,
-            self.stride, self.padding, self.dilation, self.groups,
+            x,
+            self.weight,
+            self.bias,
+            self.stride,
+            self.padding,
+            self.dilation,
+            self.groups,
         )
 
 

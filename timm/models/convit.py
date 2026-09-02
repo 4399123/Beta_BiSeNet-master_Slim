@@ -21,13 +21,13 @@ Modifications and additions for timm hacked together by / Copyright 2021, Ross W
 '''These modules are adapted from those of timm, see
 https://github.com/rwightman/pytorch-image-models/blob/master/timm/models/vision_transformer.py
 '''
-from typing import Optional
+from typing import Optional, Union, Type, Any
 
 import torch
 import torch.nn as nn
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.layers import DropPath, trunc_normal_, PatchEmbed, Mlp, LayerNorm, HybridEmbed
+from timm.layers import DropPath, calculate_drop_path_rates, trunc_normal_, PatchEmbed, Mlp, LayerNorm, HybridEmbed
 from ._builder import build_model_with_cfg
 from ._features_fx import register_notrace_module
 from ._registry import register_model, generate_default_cfgs
@@ -40,13 +40,16 @@ __all__ = ['ConVit']
 class GPSA(nn.Module):
     def __init__(
             self,
-            dim,
-            num_heads=8,
-            qkv_bias=False,
-            attn_drop=0.,
-            proj_drop=0.,
-            locality_strength=1.,
+            dim: int,
+            num_heads: int = 8,
+            qkv_bias: bool = False,
+            attn_drop: float = 0.,
+            proj_drop: float = 0.,
+            locality_strength: float = 1.,
+            device=None,
+            dtype=None,
     ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         self.num_heads = num_heads
         self.dim = dim
@@ -54,15 +57,15 @@ class GPSA(nn.Module):
         self.scale = head_dim ** -0.5
         self.locality_strength = locality_strength
 
-        self.qk = nn.Linear(dim, dim * 2, bias=qkv_bias)
-        self.v = nn.Linear(dim, dim, bias=qkv_bias)
+        self.qk = nn.Linear(dim, dim * 2, bias=qkv_bias, **dd)
+        self.v = nn.Linear(dim, dim, bias=qkv_bias, **dd)
 
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
-        self.pos_proj = nn.Linear(3, num_heads)
+        self.proj = nn.Linear(dim, dim, **dd)
+        self.pos_proj = nn.Linear(3, num_heads, **dd)
         self.proj_drop = nn.Dropout(proj_drop)
-        self.gating_param = nn.Parameter(torch.ones(self.num_heads))
-        self.rel_indices: torch.Tensor = torch.zeros(1, 1, 1, 3)  # silly torchscript hack, won't work with None
+        self.gating_param = nn.Parameter(torch.ones(self.num_heads, **dd))
+        self.rel_indices: torch.Tensor = torch.zeros(1, 1, 1, 3, **dd)  # silly torchscript hack, won't work with None
 
     def forward(self, x):
         B, N, C = x.shape
@@ -117,7 +120,10 @@ class GPSA(nn.Module):
     def get_rel_indices(self, num_patches: int) -> torch.Tensor:
         img_size = int(num_patches ** .5)
         rel_indices = torch.zeros(1, num_patches, num_patches, 3)
-        ind = torch.arange(img_size).view(1, -1) - torch.arange(img_size).view(-1, 1)
+        ind = (
+                torch.arange(img_size, dtype=torch.float32).view(1, -1)
+                - torch.arange(img_size, dtype=torch.float32).view(-1, 1)
+        )
         indx = ind.repeat(img_size, img_size)
         indy = ind.repeat_interleave(img_size, dim=0).repeat_interleave(img_size, dim=1)
         indd = indx ** 2 + indy ** 2
@@ -125,26 +131,30 @@ class GPSA(nn.Module):
         rel_indices[:, :, :, 1] = indy.unsqueeze(0)
         rel_indices[:, :, :, 0] = indx.unsqueeze(0)
         device = self.qk.weight.device
-        return rel_indices.to(device)
+        dtype = self.qk.weight.dtype
+        return rel_indices.to(device=device, dtype=dtype)
 
 
 class MHSA(nn.Module):
     def __init__(
             self,
-            dim,
-            num_heads=8,
-            qkv_bias=False,
-            attn_drop=0.,
-            proj_drop=0.,
+            dim: int,
+            num_heads: int = 8,
+            qkv_bias: bool = False,
+            attn_drop: float = 0.,
+            proj_drop: float = 0.,
+            device=None,
+            dtype=None,
     ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         self.num_heads = num_heads
         head_dim = dim // num_heads
         self.scale = head_dim ** -0.5
 
-        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias)
+        self.qkv = nn.Linear(dim, dim * 3, bias=qkv_bias, **dd)
         self.attn_drop = nn.Dropout(attn_drop)
-        self.proj = nn.Linear(dim, dim)
+        self.proj = nn.Linear(dim, dim, **dd)
         self.proj_drop = nn.Dropout(proj_drop)
 
     def get_attention_map(self, x, return_map=False):
@@ -155,12 +165,15 @@ class MHSA(nn.Module):
         attn_map = attn_map.softmax(dim=-1).mean(0)
 
         img_size = int(N ** .5)
-        ind = torch.arange(img_size).view(1, -1) - torch.arange(img_size).view(-1, 1)
+        ind = (
+                torch.arange(img_size, dtype=torch.float32).view(1, -1)
+                - torch.arange(img_size, dtype=torch.float32).view(-1, 1)
+        )
         indx = ind.repeat(img_size, img_size)
         indy = ind.repeat_interleave(img_size, dim=0).repeat_interleave(img_size, dim=1)
         indd = indx ** 2 + indy ** 2
         distances = indd ** .5
-        distances = distances.to(x.device)
+        distances = distances.to(attn_map.device, attn_map.dtype)
 
         dist = torch.einsum('nm,hnm->h', (distances, attn_map)) / N
         if return_map:
@@ -187,20 +200,23 @@ class Block(nn.Module):
 
     def __init__(
             self,
-            dim,
-            num_heads,
-            mlp_ratio=4.,
-            qkv_bias=False,
-            proj_drop=0.,
-            attn_drop=0.,
-            drop_path=0.,
-            act_layer=nn.GELU,
-            norm_layer=LayerNorm,
-            use_gpsa=True,
-            locality_strength=1.,
+            dim: int,
+            num_heads: int,
+            mlp_ratio: float = 4.,
+            qkv_bias: bool = False,
+            proj_drop: float = 0.,
+            attn_drop: float = 0.,
+            drop_path: float = 0.,
+            act_layer: Type[nn.Module] = nn.GELU,
+            norm_layer: Type[nn.Module] = LayerNorm,
+            use_gpsa: bool = True,
+            locality_strength: float = 1.,
+            device=None,
+            dtype=None,
     ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
-        self.norm1 = norm_layer(dim)
+        self.norm1 = norm_layer(dim, **dd)
         self.use_gpsa = use_gpsa
         if self.use_gpsa:
             self.attn = GPSA(
@@ -210,6 +226,7 @@ class Block(nn.Module):
                 attn_drop=attn_drop,
                 proj_drop=proj_drop,
                 locality_strength=locality_strength,
+                **dd,
             )
         else:
             self.attn = MHSA(
@@ -218,15 +235,17 @@ class Block(nn.Module):
                 qkv_bias=qkv_bias,
                 attn_drop=attn_drop,
                 proj_drop=proj_drop,
+                **dd,
             )
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
-        self.norm2 = norm_layer(dim)
+        self.norm2 = norm_layer(dim, **dd)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = Mlp(
             in_features=dim,
             hidden_features=mlp_hidden_dim,
             act_layer=act_layer,
             drop=proj_drop,
+            **dd,
         )
 
     def forward(self, x):
@@ -241,31 +260,35 @@ class ConVit(nn.Module):
 
     def __init__(
             self,
-            img_size=224,
-            patch_size=16,
-            in_chans=3,
-            num_classes=1000,
-            global_pool='token',
-            embed_dim=768,
-            depth=12,
-            num_heads=12,
-            mlp_ratio=4.,
-            qkv_bias=False,
-            drop_rate=0.,
-            pos_drop_rate=0.,
-            proj_drop_rate=0.,
-            attn_drop_rate=0.,
-            drop_path_rate=0.,
-            hybrid_backbone=None,
-            norm_layer=LayerNorm,
-            local_up_to_layer=3,
-            locality_strength=1.,
-            use_pos_embed=True,
+            img_size: int = 224,
+            patch_size: int = 16,
+            in_chans: int = 3,
+            num_classes: int = 1000,
+            global_pool: str = 'token',
+            embed_dim: int = 768,
+            depth: int = 12,
+            num_heads: int = 12,
+            mlp_ratio: float = 4.,
+            qkv_bias: bool = False,
+            drop_rate: float = 0.,
+            pos_drop_rate: float = 0.,
+            proj_drop_rate: float = 0.,
+            attn_drop_rate: float = 0.,
+            drop_path_rate: float = 0.,
+            hybrid_backbone: Optional[Any] = None,
+            norm_layer: Type[nn.Module] = LayerNorm,
+            local_up_to_layer: int = 3,
+            locality_strength: float = 1.,
+            use_pos_embed: bool = True,
+            device=None,
+            dtype=None,
     ):
         super().__init__()
+        dd = {'device': device, 'dtype': dtype}
         assert global_pool in ('', 'avg', 'token')
         embed_dim *= num_heads
         self.num_classes = num_classes
+        self.in_chans = in_chans
         self.global_pool = global_pool
         self.local_up_to_layer = local_up_to_layer
         self.num_features = self.head_hidden_size = self.embed_dim = embed_dim  # for consistency with other models
@@ -274,25 +297,31 @@ class ConVit(nn.Module):
 
         if hybrid_backbone is not None:
             self.patch_embed = HybridEmbed(
-                hybrid_backbone, img_size=img_size, in_chans=in_chans, embed_dim=embed_dim)
+                hybrid_backbone,
+                img_size=img_size,
+                in_chans=in_chans,
+                embed_dim=embed_dim,
+                **dd,
+            )
         else:
             self.patch_embed = PatchEmbed(
                 img_size=img_size,
                 patch_size=patch_size,
                 in_chans=in_chans,
                 embed_dim=embed_dim,
+                **dd,
             )
         num_patches = self.patch_embed.num_patches
         self.num_patches = num_patches
 
-        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim))
+        self.cls_token = nn.Parameter(torch.zeros(1, 1, embed_dim, **dd))
         self.pos_drop = nn.Dropout(p=pos_drop_rate)
 
         if self.use_pos_embed:
-            self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim))
+            self.pos_embed = nn.Parameter(torch.zeros(1, num_patches, embed_dim, **dd))
             trunc_normal_(self.pos_embed, std=.02)
 
-        dpr = [x.item() for x in torch.linspace(0, drop_path_rate, depth)]  # stochastic depth decay rule
+        dpr = calculate_drop_path_rates(drop_path_rate, depth)  # stochastic depth decay rule
         self.blocks = nn.ModuleList([
             Block(
                 dim=embed_dim,
@@ -305,13 +334,14 @@ class ConVit(nn.Module):
                 norm_layer=norm_layer,
                 use_gpsa=i < local_up_to_layer,
                 locality_strength=locality_strength,
+                **dd,
             ) for i in range(depth)])
-        self.norm = norm_layer(embed_dim)
+        self.norm = norm_layer(embed_dim, **dd)
 
         # Classifier head
         self.feature_info = [dict(num_chs=embed_dim, reduction=0, module='head')]
         self.head_drop = nn.Dropout(drop_rate)
-        self.head = nn.Linear(embed_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.head = nn.Linear(embed_dim, num_classes, **dd) if num_classes > 0 else nn.Identity()
 
         trunc_normal_(self.cls_token, std=.02)
         self.apply(self._init_weights)
@@ -391,7 +421,7 @@ def _cfg(url='', **kwargs):
         'url': url,
         'num_classes': 1000, 'input_size': (3, 224, 224), 'pool_size': None,
         'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD, 'fixed_input_size': True,
-        'first_conv': 'patch_embed.proj', 'classifier': 'head',
+        'first_conv': 'patch_embed.proj', 'classifier': 'head', 'license': 'apache-2.0',
         **kwargs
     }
 

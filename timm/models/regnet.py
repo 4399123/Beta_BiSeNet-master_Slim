@@ -26,13 +26,13 @@ Hacked together by / Copyright 2020 Ross Wightman
 import math
 from dataclasses import dataclass, replace
 from functools import partial
-from typing import Any, Callable, Dict, List, Optional, Union, Tuple
+from typing import Any, Callable, Dict, List, Optional, Union, Tuple, Type
 
 import torch
 import torch.nn as nn
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.layers import ClassifierHead, AvgPool2dSame, ConvNormAct, SEModule, DropPath, GroupNormAct
+from timm.layers import ClassifierHead, AvgPool2dSame, ConvNormAct, SEModule, DropPath, GroupNormAct, calculate_drop_path_rates
 from timm.layers import get_act_layer, get_norm_act_layer, create_conv2d, make_divisible
 from ._builder import build_model_with_cfg
 from ._features import feature_take_indices
@@ -142,8 +142,10 @@ def downsample_conv(
         kernel_size: int = 1,
         stride: int = 1,
         dilation: int = 1,
-        norm_layer: Optional[Callable] = None,
+        norm_layer: Optional[Type[nn.Module]] = None,
         preact: bool = False,
+        device=None,
+        dtype=None,
 ) -> nn.Module:
     """Create convolutional downsampling module.
 
@@ -159,6 +161,7 @@ def downsample_conv(
     Returns:
         Downsampling module.
     """
+    dd = {'device': device, 'dtype': dtype}
     norm_layer = norm_layer or nn.BatchNorm2d
     kernel_size = 1 if stride == 1 and dilation == 1 else kernel_size
     dilation = dilation if kernel_size > 1 else 1
@@ -169,6 +172,7 @@ def downsample_conv(
             kernel_size,
             stride=stride,
             dilation=dilation,
+            **dd,
         )
     else:
         return ConvNormAct(
@@ -179,6 +183,7 @@ def downsample_conv(
             dilation=dilation,
             norm_layer=norm_layer,
             apply_act=False,
+            **dd,
         )
 
 
@@ -188,8 +193,10 @@ def downsample_avg(
         kernel_size: int = 1,
         stride: int = 1,
         dilation: int = 1,
-        norm_layer: Optional[Callable] = None,
+        norm_layer: Optional[Type[nn.Module]] = None,
         preact: bool = False,
+        device=None,
+        dtype=None,
 ) -> nn.Sequential:
     """Create average pool downsampling module.
 
@@ -207,6 +214,7 @@ def downsample_avg(
     Returns:
         Sequential downsampling module.
     """
+    dd = {'device': device, 'dtype': dtype}
     norm_layer = norm_layer or nn.BatchNorm2d
     avg_stride = stride if dilation == 1 else 1
     pool = nn.Identity()
@@ -214,9 +222,9 @@ def downsample_avg(
         avg_pool_fn = AvgPool2dSame if avg_stride == 1 and dilation > 1 else nn.AvgPool2d
         pool = avg_pool_fn(2, avg_stride, ceil_mode=True, count_include_pad=False)
     if preact:
-        conv = create_conv2d(in_chs, out_chs, 1, stride=1)
+        conv = create_conv2d(in_chs, out_chs, 1, stride=1, **dd)
     else:
-        conv = ConvNormAct(in_chs, out_chs, 1, stride=1, norm_layer=norm_layer, apply_act=False)
+        conv = ConvNormAct(in_chs, out_chs, 1, stride=1, norm_layer=norm_layer, apply_act=False, **dd)
     return nn.Sequential(*[pool, conv])
 
 
@@ -227,8 +235,10 @@ def create_shortcut(
         kernel_size: int,
         stride: int,
         dilation: Tuple[int, int] = (1, 1),
-        norm_layer: Optional[Callable] = None,
+        norm_layer: Optional[Type[nn.Module]] = None,
         preact: bool = False,
+        device=None,
+        dtype=None,
 ) -> Optional[nn.Module]:
     """Create shortcut connection for residual blocks.
 
@@ -245,9 +255,10 @@ def create_shortcut(
     Returns:
         Shortcut module or None.
     """
+    dd = {'device': device, 'dtype': dtype}
     assert downsample_type in ('avg', 'conv1x1', '', None)
     if in_chs != out_chs or stride != 1 or dilation[0] != dilation[1]:
-        dargs = dict(stride=stride, dilation=dilation[0], norm_layer=norm_layer, preact=preact)
+        dargs = dict(stride=stride, dilation=dilation[0], norm_layer=norm_layer, preact=preact, **dd)
         if not downsample_type:
             return None  # no shortcut, no downsample
         elif downsample_type == 'avg':
@@ -276,10 +287,12 @@ class Bottleneck(nn.Module):
             se_ratio: float = 0.25,
             downsample: str = 'conv1x1',
             linear_out: bool = False,
-            act_layer: Callable = nn.ReLU,
-            norm_layer: Callable = nn.BatchNorm2d,
-            drop_block=None,
+            act_layer: Type[nn.Module] = nn.ReLU,
+            norm_layer: Type[nn.Module] = nn.BatchNorm2d,
+            drop_block: Optional[Type[nn.Module]] = None,
             drop_path_rate: float = 0.,
+            device=None,
+            dtype=None,
     ):
         """Initialize RegNet Bottleneck block.
 
@@ -298,13 +311,14 @@ class Bottleneck(nn.Module):
             drop_block: Drop block layer.
             drop_path_rate: Stochastic depth drop rate.
         """
-        super(Bottleneck, self).__init__()
+        dd = {'device': device, 'dtype': dtype}
+        super().__init__()
         act_layer = get_act_layer(act_layer)
         bottleneck_chs = int(round(out_chs * bottle_ratio))
         groups = bottleneck_chs // group_size
 
         cargs = dict(act_layer=act_layer, norm_layer=norm_layer)
-        self.conv1 = ConvNormAct(in_chs, bottleneck_chs, kernel_size=1, **cargs)
+        self.conv1 = ConvNormAct(in_chs, bottleneck_chs, kernel_size=1, **cargs, **dd)
         self.conv2 = ConvNormAct(
             bottleneck_chs,
             bottleneck_chs,
@@ -314,13 +328,14 @@ class Bottleneck(nn.Module):
             groups=groups,
             drop_layer=drop_block,
             **cargs,
+            **dd,
         )
         if se_ratio:
             se_channels = int(round(in_chs * se_ratio))
-            self.se = SEModule(bottleneck_chs, rd_channels=se_channels, act_layer=act_layer)
+            self.se = SEModule(bottleneck_chs, rd_channels=se_channels, act_layer=act_layer, **dd)
         else:
             self.se = nn.Identity()
-        self.conv3 = ConvNormAct(bottleneck_chs, out_chs, kernel_size=1, apply_act=False, **cargs)
+        self.conv3 = ConvNormAct(bottleneck_chs, out_chs, kernel_size=1, apply_act=False, **cargs, **dd)
         self.act3 = nn.Identity() if linear_out else act_layer()
         self.downsample = create_shortcut(
             downsample,
@@ -330,6 +345,7 @@ class Bottleneck(nn.Module):
             stride=stride,
             dilation=dilation,
             norm_layer=norm_layer,
+            **dd,
         )
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0 else nn.Identity()
 
@@ -376,10 +392,12 @@ class PreBottleneck(nn.Module):
             se_ratio: float = 0.25,
             downsample: str = 'conv1x1',
             linear_out: bool = False,
-            act_layer: Callable = nn.ReLU,
-            norm_layer: Callable = nn.BatchNorm2d,
-            drop_block=None,
+            act_layer: Type[nn.Module] = nn.ReLU,
+            norm_layer: Type[nn.Module] = nn.BatchNorm2d,
+            drop_block: Optional[Type[nn.Module]] = None,
             drop_path_rate: float = 0.,
+            device=None,
+            dtype=None,
     ):
         """Initialize pre-activation RegNet Bottleneck block.
 
@@ -398,14 +416,15 @@ class PreBottleneck(nn.Module):
             drop_block: Drop block layer.
             drop_path_rate: Stochastic depth drop rate.
         """
-        super(PreBottleneck, self).__init__()
+        dd = {'device': device, 'dtype': dtype}
+        super().__init__()
         norm_act_layer = get_norm_act_layer(norm_layer, act_layer)
         bottleneck_chs = int(round(out_chs * bottle_ratio))
         groups = bottleneck_chs // group_size
 
-        self.norm1 = norm_act_layer(in_chs)
-        self.conv1 = create_conv2d(in_chs, bottleneck_chs, kernel_size=1)
-        self.norm2 = norm_act_layer(bottleneck_chs)
+        self.norm1 = norm_act_layer(in_chs, **dd)
+        self.conv1 = create_conv2d(in_chs, bottleneck_chs, kernel_size=1, **dd)
+        self.norm2 = norm_act_layer(bottleneck_chs, **dd)
         self.conv2 = create_conv2d(
             bottleneck_chs,
             bottleneck_chs,
@@ -413,14 +432,15 @@ class PreBottleneck(nn.Module):
             stride=stride,
             dilation=dilation[0],
             groups=groups,
+            **dd,
         )
         if se_ratio:
             se_channels = int(round(in_chs * se_ratio))
-            self.se = SEModule(bottleneck_chs, rd_channels=se_channels, act_layer=act_layer)
+            self.se = SEModule(bottleneck_chs, rd_channels=se_channels, act_layer=act_layer, **dd)
         else:
             self.se = nn.Identity()
-        self.norm3 = norm_act_layer(bottleneck_chs)
-        self.conv3 = create_conv2d(bottleneck_chs, out_chs, kernel_size=1)
+        self.norm3 = norm_act_layer(bottleneck_chs, **dd)
+        self.conv3 = create_conv2d(bottleneck_chs, out_chs, kernel_size=1, **dd)
         self.downsample = create_shortcut(
             downsample,
             in_chs,
@@ -429,6 +449,7 @@ class PreBottleneck(nn.Module):
             stride=stride,
             dilation=dilation,
             preact=True,
+            **dd,
         )
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0 else nn.Identity()
 
@@ -474,7 +495,7 @@ class RegStage(nn.Module):
             stride: int,
             dilation: int,
             drop_path_rates: Optional[List[float]] = None,
-            block_fn: Callable = Bottleneck,
+            block_fn: Type[nn.Module] = Bottleneck,
             **block_kwargs,
     ):
         """Initialize RegNet stage.
@@ -489,7 +510,7 @@ class RegStage(nn.Module):
             block_fn: Block class to use.
             **block_kwargs: Additional block arguments.
         """
-        super(RegStage, self).__init__()
+        super().__init__()
         self.grad_checkpointing = False
 
         first_dilation = 1 if dilation in (1, 2) else 2
@@ -546,6 +567,8 @@ class RegNet(nn.Module):
             drop_rate: float = 0.,
             drop_path_rate: float = 0.,
             zero_init_last: bool = True,
+            device=None,
+            dtype=None,
             **kwargs,
     ):
         """Initialize RegNet model.
@@ -562,7 +585,9 @@ class RegNet(nn.Module):
             kwargs: Extra kwargs overlayed onto cfg.
         """
         super().__init__()
+        dd = {'device': device, 'dtype': dtype}
         self.num_classes = num_classes
+        self.in_chans = in_chans
         self.drop_rate = drop_rate
         assert output_stride in (8, 16, 32)
         cfg = replace(cfg, **kwargs)  # update cfg with extra passed kwargs
@@ -571,9 +596,9 @@ class RegNet(nn.Module):
         stem_width = cfg.stem_width
         na_args = dict(act_layer=cfg.act_layer, norm_layer=cfg.norm_layer)
         if cfg.preact:
-            self.stem = create_conv2d(in_chans, stem_width, 3, stride=2)
+            self.stem = create_conv2d(in_chans, stem_width, 3, stride=2, **dd)
         else:
-            self.stem = ConvNormAct(in_chans, stem_width, 3, stride=2, **na_args)
+            self.stem = ConvNormAct(in_chans, stem_width, 3, stride=2, **na_args, **dd)
         self.feature_info = [dict(num_chs=stem_width, reduction=2, module='stem')]
 
         # Construct the stages
@@ -595,6 +620,7 @@ class RegNet(nn.Module):
                     block_fn=block_fn,
                     **stage_args,
                     **common_args,
+                    **dd,
                 )
             )
             prev_width = stage_args['out_chs']
@@ -603,7 +629,7 @@ class RegNet(nn.Module):
 
         # Construct the head
         if cfg.num_features:
-            self.final_conv = ConvNormAct(prev_width, cfg.num_features, kernel_size=1, **na_args)
+            self.final_conv = ConvNormAct(prev_width, cfg.num_features, kernel_size=1, **na_args, **dd)
             self.num_features = cfg.num_features
         else:
             final_act = cfg.linear_out or cfg.preact
@@ -615,6 +641,7 @@ class RegNet(nn.Module):
             num_classes=num_classes,
             pool_type=global_pool,
             drop_rate=drop_rate,
+            **dd,
         )
 
         named_apply(partial(_init_weights, zero_init_last=zero_init_last), self)
@@ -657,11 +684,7 @@ class RegNet(nn.Module):
                 net_stride *= stride
             stage_strides.append(stride)
             stage_dilations.append(dilation)
-        dpr_tensor = torch.linspace(0, drop_path_rate, sum(stage_depths))
-        split_indices = torch.cumsum(torch.tensor(stage_depths[:-1]), dim=0)
-        stage_dpr = torch.tensor_split(dpr_tensor, split_indices.tolist())
-        stage_dpr = [dpr.tolist() for dpr in stage_dpr]
-
+        stage_dpr = calculate_drop_path_rates(drop_path_rate, stage_depths, stagewise=True)
         # Adjust the compatibility of ws and gws
         stage_widths, stage_gs = adjust_widths_groups_comp(
             stage_widths, stage_br, stage_gs, min_ratio=cfg.group_min_ratio)
@@ -1011,7 +1034,7 @@ def _cfg(url: str = '', **kwargs) -> Dict[str, Any]:
         'test_input_size': (3, 288, 288), 'crop_pct': 0.95, 'test_crop_pct': 1.0,
         'interpolation': 'bicubic', 'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD,
         'first_conv': 'stem.conv', 'classifier': 'head.fc',
-        **kwargs
+        'license': 'apache-2.0', **kwargs
     }
 
 
@@ -1173,37 +1196,37 @@ default_cfgs = generate_default_cfgs({
 
     'regnety_320.seer_ft_in1k': _cfgtv2(
         hf_hub_id='timm/',
-        license='other', origin_url='https://github.com/facebookresearch/vissl',
+        license='seer-license', origin_url='https://github.com/facebookresearch/vissl',
         url='https://dl.fbaipublicfiles.com/vissl/model_zoo/seer_finetuned/seer_regnet32_finetuned_in1k_model_final_checkpoint_phase78.torch',
         input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=1.0),
     'regnety_640.seer_ft_in1k': _cfgtv2(
         hf_hub_id='timm/',
-        license='other', origin_url='https://github.com/facebookresearch/vissl',
+        license='seer-license', origin_url='https://github.com/facebookresearch/vissl',
         url='https://dl.fbaipublicfiles.com/vissl/model_zoo/seer_finetuned/seer_regnet64_finetuned_in1k_model_final_checkpoint_phase78.torch',
         input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=1.0),
     'regnety_1280.seer_ft_in1k': _cfgtv2(
         hf_hub_id='timm/',
-        license='other', origin_url='https://github.com/facebookresearch/vissl',
+        license='seer-license', origin_url='https://github.com/facebookresearch/vissl',
         url='https://dl.fbaipublicfiles.com/vissl/model_zoo/seer_finetuned/seer_regnet128_finetuned_in1k_model_final_checkpoint_phase78.torch',
         input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=1.0),
     'regnety_2560.seer_ft_in1k': _cfgtv2(
         hf_hub_id='timm/',
-        license='other', origin_url='https://github.com/facebookresearch/vissl',
+        license='seer-license', origin_url='https://github.com/facebookresearch/vissl',
         url='https://dl.fbaipublicfiles.com/vissl/model_zoo/seer_finetuned/seer_regnet256_finetuned_in1k_model_final_checkpoint_phase38.torch',
         input_size=(3, 384, 384), pool_size=(12, 12), crop_pct=1.0),
 
     'regnety_320.seer': _cfgtv2(
         hf_hub_id='timm/',
         url='https://dl.fbaipublicfiles.com/vissl/model_zoo/seer_regnet32d/seer_regnet32gf_model_iteration244000.torch',
-        num_classes=0, license='other', origin_url='https://github.com/facebookresearch/vissl'),
+        num_classes=0, license='seer-license', origin_url='https://github.com/facebookresearch/vissl'),
     'regnety_640.seer': _cfgtv2(
         hf_hub_id='timm/',
         url='https://dl.fbaipublicfiles.com/vissl/model_zoo/seer_regnet64/seer_regnet64gf_model_final_checkpoint_phase0.torch',
-        num_classes=0, license='other', origin_url='https://github.com/facebookresearch/vissl'),
+        num_classes=0, license='seer-license', origin_url='https://github.com/facebookresearch/vissl'),
     'regnety_1280.seer': _cfgtv2(
         hf_hub_id='timm/',
         url='https://dl.fbaipublicfiles.com/vissl/model_zoo/swav_ig1b_regnet128Gf_cnstant_bs32_node16_sinkhorn10_proto16k_syncBN64_warmup8k/model_final_checkpoint_phase0.torch',
-        num_classes=0, license='other', origin_url='https://github.com/facebookresearch/vissl'),
+        num_classes=0, license='seer-license', origin_url='https://github.com/facebookresearch/vissl'),
     # FIXME invalid weight <-> model match, mistake on their end
     #'regnety_2560.seer': _cfgtv2(
     #    url='https://dl.fbaipublicfiles.com/vissl/model_zoo/swav_ig1b_cosine_rg256gf_noBNhead_wd1e5_fairstore_bs16_node64_sinkhorn10_proto16k_apex_syncBN64_warmup8k/model_final_checkpoint_phase0.torch',

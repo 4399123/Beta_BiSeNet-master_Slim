@@ -96,7 +96,9 @@ class EfficientNet(nn.Module):
             round_chs_fn: Callable = round_channels,
             drop_rate: float = 0.,
             drop_path_rate: float = 0.,
-            global_pool: str = 'avg'
+            global_pool: str = 'avg',
+            device=None,
+            dtype=None,
     ) -> None:
         """Initialize EfficientNet model.
 
@@ -119,20 +121,22 @@ class EfficientNet(nn.Module):
             drop_path_rate: Drop path rate for stochastic depth.
             global_pool: Global pooling type.
         """
-        super(EfficientNet, self).__init__()
+        super().__init__()
+        dd = {'device': device, 'dtype': dtype}
         act_layer = act_layer or nn.ReLU
         norm_layer = norm_layer or nn.BatchNorm2d
         norm_act_layer = get_norm_act_layer(norm_layer, act_layer)
         se_layer = se_layer or SqueezeExcite
         self.num_classes = num_classes
+        self.in_chans = in_chans
         self.drop_rate = drop_rate
         self.grad_checkpointing = False
 
         # Stem
         if not fix_stem:
             stem_size = round_chs_fn(stem_size)
-        self.conv_stem = create_conv2d(in_chans, stem_size, stem_kernel_size, stride=2, padding=pad_type)
-        self.bn1 = norm_act_layer(stem_size, inplace=True)
+        self.conv_stem = create_conv2d(in_chans, stem_size, stem_kernel_size, stride=2, padding=pad_type, **dd)
+        self.bn1 = norm_act_layer(stem_size, inplace=True, **dd)
 
         # Middle stages (IR/ER/DS Blocks)
         builder = EfficientNetBuilder(
@@ -144,6 +148,7 @@ class EfficientNet(nn.Module):
             aa_layer=aa_layer,
             se_layer=se_layer,
             drop_path_rate=drop_path_rate,
+            **dd,
         )
         self.blocks = nn.Sequential(*builder(stem_size, block_args))
         self.feature_info = builder.features
@@ -152,8 +157,8 @@ class EfficientNet(nn.Module):
 
         # Head + Pooling
         if num_features > 0:
-            self.conv_head = create_conv2d(head_chs, num_features, 1, padding=pad_type)
-            self.bn2 = norm_act_layer(num_features, inplace=True)
+            self.conv_head = create_conv2d(head_chs, num_features, 1, padding=pad_type, **dd)
+            self.bn2 = norm_act_layer(num_features, inplace=True, **dd)
             self.num_features = self.head_hidden_size = num_features
         else:
             self.conv_head = nn.Identity()
@@ -161,7 +166,11 @@ class EfficientNet(nn.Module):
             self.num_features = self.head_hidden_size = head_chs
 
         self.global_pool, self.classifier = create_classifier(
-            self.num_features, self.num_classes, pool_type=global_pool)
+            self.num_features,
+            self.num_classes,
+            pool_type=global_pool,
+            **dd,
+        )
 
         efficientnet_init_weights(self)
 
@@ -366,20 +375,24 @@ class EfficientNetFeatures(nn.Module):
             round_chs_fn: Callable = round_channels,
             drop_rate: float = 0.,
             drop_path_rate: float = 0.,
+            device=None,
+            dtype=None,
     ):
-        super(EfficientNetFeatures, self).__init__()
+        super().__init__()
+        dd = {'device': device, 'dtype': dtype}
         act_layer = act_layer or nn.ReLU
         norm_layer = norm_layer or nn.BatchNorm2d
         norm_act_layer = get_norm_act_layer(norm_layer, act_layer)
         se_layer = se_layer or SqueezeExcite
+        self.in_chans = in_chans
         self.drop_rate = drop_rate
         self.grad_checkpointing = False
 
         # Stem
         if not fix_stem:
             stem_size = round_chs_fn(stem_size)
-        self.conv_stem = create_conv2d(in_chans, stem_size, stem_kernel_size, stride=2, padding=pad_type)
-        self.bn1 = norm_act_layer(stem_size, inplace=True)
+        self.conv_stem = create_conv2d(in_chans, stem_size, stem_kernel_size, stride=2, padding=pad_type, **dd)
+        self.bn1 = norm_act_layer(stem_size, inplace=True, **dd)
 
         # Middle stages (IR/ER/DS Blocks)
         builder = EfficientNetBuilder(
@@ -392,6 +405,7 @@ class EfficientNetFeatures(nn.Module):
             se_layer=se_layer,
             drop_path_rate=drop_path_rate,
             feature_location=feature_location,
+            **dd,
         )
         self.blocks = nn.Sequential(*builder(stem_size, block_args))
         self.feature_info = FeatureInfo(builder.features, out_indices)
@@ -446,13 +460,14 @@ def _create_effnet(variant, pretrained=False, **kwargs):
             kwargs_filter = ('num_classes', 'num_features', 'head_conv', 'global_pool')
             model_cls = EfficientNetFeatures
             features_mode = 'cls'
+    pretrained_strict = kwargs.pop('pretrained_strict', True)
 
     model = build_model_with_cfg(
         model_cls,
         variant,
         pretrained,
         features_only=features_mode == 'cfg',
-        pretrained_strict=features_mode != 'cls',
+        pretrained_strict=pretrained_strict and features_mode != 'cls',
         kwargs_filter=kwargs_filter,
         **kwargs,
     )
@@ -1312,7 +1327,7 @@ def _cfg(url='', **kwargs):
         'crop_pct': 0.875, 'interpolation': 'bicubic',
         'mean': IMAGENET_DEFAULT_MEAN, 'std': IMAGENET_DEFAULT_STD,
         'first_conv': 'conv_stem', 'classifier': 'classifier',
-        **kwargs
+        'license': 'apache-2.0', **kwargs
     }
 
 
@@ -1434,6 +1449,16 @@ default_cfgs = generate_default_cfgs({
     'efficientnet_b3_g8_gn.untrained': _cfg(
         input_size=(3, 288, 288), pool_size=(9, 9), test_input_size=(3, 320, 320), crop_pct=1.0),
     'efficientnet_blur_b0.untrained': _cfg(),
+    'efficientnet_h_b5.sw_r448_e450_in1k': _cfg(
+        hf_hub_id='timm/',
+        input_size=(3, 448, 448), pool_size=(14, 14), crop_pct=1.0,
+        crop_mode='squash', test_input_size=(3, 576, 576)),
+    'efficientnet_x_b3.untrained': _cfg(
+        url='', input_size=(3, 288, 288), pool_size=(9, 9), crop_pct=0.95),
+    'efficientnet_x_b5.sw_r448_e450_in1k': _cfg(
+        hf_hub_id='timm/',
+        input_size=(3, 448, 448), pool_size=(14, 14), crop_pct=1.0,
+        crop_mode='squash', test_input_size=(3, 576, 576)),
 
     'efficientnet_es.ra_in1k': _cfg(
         url='https://github.com/rwightman/pytorch-image-models/releases/download/v0.1-weights/efficientnet_es_ra-f111e99c.pth',
@@ -2708,7 +2733,7 @@ def efficientnet_x_b3(pretrained=False, **kwargs) -> EfficientNet:
     """ EfficientNet-B3 """
     # NOTE for train, drop_rate should be 0.3, drop_path_rate should be 0.2
     model = _gen_efficientnet_x(
-        'efficientnet_b3', channel_multiplier=1.2, depth_multiplier=1.4, pretrained=pretrained, **kwargs)
+        'efficientnet_x_b3', channel_multiplier=1.2, depth_multiplier=1.4, pretrained=pretrained, **kwargs)
     return model
 
 
@@ -2716,7 +2741,7 @@ def efficientnet_x_b3(pretrained=False, **kwargs) -> EfficientNet:
 def efficientnet_x_b5(pretrained=False, **kwargs) -> EfficientNet:
     """ EfficientNet-B5 """
     model = _gen_efficientnet_x(
-        'efficientnet_b5', channel_multiplier=1.6, depth_multiplier=2.2, pretrained=pretrained, **kwargs)
+        'efficientnet_x_b5', channel_multiplier=1.6, depth_multiplier=2.2, pretrained=pretrained, **kwargs)
     return model
 
 
@@ -2724,7 +2749,7 @@ def efficientnet_x_b5(pretrained=False, **kwargs) -> EfficientNet:
 def efficientnet_h_b5(pretrained=False, **kwargs) -> EfficientNet:
     """ EfficientNet-B5 """
     model = _gen_efficientnet_x(
-        'efficientnet_b5', channel_multiplier=1.92, depth_multiplier=2.2, version=2, pretrained=pretrained, **kwargs)
+        'efficientnet_h_b5', channel_multiplier=1.92, depth_multiplier=2.2, version=2, pretrained=pretrained, **kwargs)
     return model
 
 

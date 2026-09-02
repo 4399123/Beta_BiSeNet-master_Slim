@@ -66,17 +66,20 @@ export CUDA_VISIBLE_DEVICES=0,1,2,3,4
 
 python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 clip_m_trainv2.py
 python -m torch.distributed.launch --nnodes 1 --nproc_per_node=3 clip_m_trainv2.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=2 clip_m_trainv2_blackwell_v2.py
 torchrun --nnodes 1 --nproc_per_node 2 --master_port 25640  clip_m_trainv2_blackwell.py
 torchrun --nnodes 1 --nproc_per_node 2 --master_port 25640  clip_m_trainv2_blackwell_v2.py
 python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 arcface_train.py
 python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 train_multi.py
 python -m torch.distributed.launch --nnodes 1 --nproc_per_node=2 train_multi.py
+python -m torch.distributed.launch --nnodes 1 --nproc_per_node=2 1_train.py
+torchrun --nnodes 1 --nproc_per_node 2 --master_port 25640  1_train.py
 torchrun --nnodes 1 --nproc_per_node 2 --master_port 25111 train_multi.py
 python -m torch.distributed.launch --nnodes 1 --nproc_per_node=2 --master_port=21646 train_multi.py
 python -m torch.distributed.launch --nnodes 1 --nproc_per_node=3 clip_m_train_one.py
 python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 --master_port=25640 clip_m_trainv2.py
 python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 --master_port=25646 clip_m_train_one.py
-python -m torch.distributed.launch --nnodes 1 --nproc_per_node=4 clip_m_trainv2_contrast.py
+
 
 #yolov6
 python -m torch.distributed.launch --nnodes 1 --nproc_per_node=3  --master_port=25640 1_train.py

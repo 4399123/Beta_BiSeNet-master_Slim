@@ -40,7 +40,10 @@ class ConvStem(nn.Sequential):
             padding: Union[str, int, Tuple[int, ...]] = "",
             norm_layer: Type[nn.Module] = nn.BatchNorm2d,
             act_layer: Type[nn.Module] = nn.ReLU,
+            device=None,
+            dtype=None,
     ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         if isinstance(channels, int):
             # a default tiered channel strategy
@@ -64,8 +67,13 @@ class ConvStem(nn.Sequential):
                 apply_act=not last_conv,
                 norm_layer=norm_layer,
                 act_layer=act_layer,
+                **dd,
             ))
             in_chs = channels[i]
+
+
+def _dd_from_kwargs(**kwargs):
+    return {'device': kwargs.get('device', None), 'dtype': kwargs.get('dtype', None)}
 
 
 def _resnetv2(layers=(3, 4, 9), **kwargs):
@@ -75,11 +83,23 @@ def _resnetv2(layers=(3, 4, 9), **kwargs):
     conv_layer = partial(StdConv2dSame, eps=1e-8) if padding_same else partial(StdConv2d, eps=1e-8)
     if len(layers):
         backbone = ResNetV2(
-            layers=layers, num_classes=0, global_pool='', in_chans=kwargs.get('in_chans', 3),
-            preact=False, stem_type=stem_type, conv_layer=conv_layer)
+            layers=layers,
+            num_classes=0,
+            global_pool='',
+            in_chans=kwargs.get('in_chans', 3),
+            preact=False,
+            stem_type=stem_type,
+            conv_layer=conv_layer,
+            **_dd_from_kwargs(**kwargs),
+        )
     else:
         backbone = create_resnetv2_stem(
-            kwargs.get('in_chans', 3), stem_type=stem_type, preact=False, conv_layer=conv_layer)
+            kwargs.get('in_chans', 3),
+            stem_type=stem_type,
+            preact=False,
+            conv_layer=conv_layer,
+            **_dd_from_kwargs(**kwargs),
+        )
     return backbone
 
 
@@ -150,6 +170,7 @@ def _cfg(url='', **kwargs):
         'crop_pct': .9, 'interpolation': 'bicubic', 'fixed_input_size': True,
         'mean': (0.5, 0.5, 0.5), 'std': (0.5, 0.5, 0.5),
         'first_conv': 'patch_embed.backbone.stem.conv', 'classifier': 'head',
+        'license': 'apache-2.0',
         **kwargs
     }
 
@@ -221,6 +242,7 @@ default_cfgs = generate_default_cfgs({
     'vit_base_mci_224.apple_mclip_lt': _cfg(
         hf_hub_id='apple/mobileclip_b_lt_timm',
         url='https://docs-assets.developer.apple.com/ml-research/datasets/mobileclip/mobileclip_blt.pt',
+        license='apple-amlr',
         num_classes=512,
         mean=(0., 0., 0.), std=(1., 1., 1.), first_conv='patch_embed.backbone.0.conv',
     ),
@@ -228,6 +250,7 @@ default_cfgs = generate_default_cfgs({
         hf_hub_id='apple/mobileclip_b_timm',
         url='https://docs-assets.developer.apple.com/ml-research/datasets/mobileclip/mobileclip_b.pt',
         num_classes=512,
+        license='apple-amlr',
         mean=(0., 0., 0.), std=(1., 1., 1.), first_conv='patch_embed.backbone.0.conv',
     ),
     'vit_base_mci_224.apple_mclip2_dfndr2b': _cfg(
@@ -343,7 +366,13 @@ def vit_large_r50_s32_384(pretrained=False, **kwargs) -> VisionTransformer:
 def vit_small_resnet26d_224(pretrained=False, **kwargs) -> VisionTransformer:
     """ Custom ViT small hybrid w/ ResNet26D stride 32. No pretrained weights.
     """
-    backbone = resnet26d(pretrained=pretrained, in_chans=kwargs.get('in_chans', 3), features_only=True, out_indices=[4])
+    backbone = resnet26d(
+        pretrained=pretrained,
+        in_chans=kwargs.get('in_chans', 3),
+        features_only=True,
+        out_indices=[4],
+        **_dd_from_kwargs(**kwargs),
+    )
     model_args = dict(embed_dim=768, depth=8, num_heads=8, mlp_ratio=3)
     model = _create_vision_transformer_hybrid(
         'vit_small_resnet26d_224', backbone=backbone, pretrained=pretrained, **dict(model_args, **kwargs))
@@ -354,7 +383,13 @@ def vit_small_resnet26d_224(pretrained=False, **kwargs) -> VisionTransformer:
 def vit_small_resnet50d_s16_224(pretrained=False, **kwargs) -> VisionTransformer:
     """ Custom ViT small hybrid w/ ResNet50D 3-stages, stride 16. No pretrained weights.
     """
-    backbone = resnet50d(pretrained=pretrained, in_chans=kwargs.get('in_chans', 3), features_only=True, out_indices=[3])
+    backbone = resnet50d(
+        pretrained=pretrained,
+        in_chans=kwargs.get('in_chans', 3),
+        features_only=True,
+        out_indices=[3],
+        **_dd_from_kwargs(**kwargs),
+    )
     model_args = dict(embed_dim=768, depth=8, num_heads=8, mlp_ratio=3)
     model = _create_vision_transformer_hybrid(
         'vit_small_resnet50d_s16_224', backbone=backbone, pretrained=pretrained, **dict(model_args, **kwargs))
@@ -365,7 +400,13 @@ def vit_small_resnet50d_s16_224(pretrained=False, **kwargs) -> VisionTransformer
 def vit_base_resnet26d_224(pretrained=False, **kwargs) -> VisionTransformer:
     """ Custom ViT base hybrid w/ ResNet26D stride 32. No pretrained weights.
     """
-    backbone = resnet26d(pretrained=pretrained, in_chans=kwargs.get('in_chans', 3), features_only=True, out_indices=[4])
+    backbone = resnet26d(
+        pretrained=pretrained,
+        in_chans=kwargs.get('in_chans', 3),
+        features_only=True,
+        out_indices=[4],
+        **_dd_from_kwargs(**kwargs),
+    )
     model_args = dict(embed_dim=768, depth=12, num_heads=12)
     model = _create_vision_transformer_hybrid(
         'vit_base_resnet26d_224', backbone=backbone, pretrained=pretrained, **dict(model_args, **kwargs))
@@ -376,7 +417,13 @@ def vit_base_resnet26d_224(pretrained=False, **kwargs) -> VisionTransformer:
 def vit_base_resnet50d_224(pretrained=False, **kwargs) -> VisionTransformer:
     """ Custom ViT base hybrid w/ ResNet50D stride 32. No pretrained weights.
     """
-    backbone = resnet50d(pretrained=pretrained, in_chans=kwargs.get('in_chans', 3), features_only=True, out_indices=[4])
+    backbone = resnet50d(
+        pretrained=pretrained,
+        in_chans=kwargs.get('in_chans', 3),
+        features_only=True,
+        out_indices=[4],
+        **_dd_from_kwargs(**kwargs),
+    )
     model_args = dict(embed_dim=768, depth=12, num_heads=12)
     model = _create_vision_transformer_hybrid(
         'vit_base_resnet50d_224', backbone=backbone, pretrained=pretrained, **dict(model_args, **kwargs))
@@ -394,6 +441,7 @@ def vit_base_mci_224(pretrained=False, **kwargs) -> VisionTransformer:
         padding=0,
         in_chans=kwargs.get('in_chans', 3),
         act_layer=nn.GELU,
+        **_dd_from_kwargs(**kwargs),
     )
     model_args = dict(embed_dim=768, depth=12, num_heads=12, no_embed_class=True)
     model = _create_vision_transformer_hybrid(

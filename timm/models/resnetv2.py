@@ -38,7 +38,7 @@ import torch.nn as nn
 
 from timm.data import IMAGENET_INCEPTION_MEAN, IMAGENET_INCEPTION_STD
 from timm.layers import GroupNormAct, BatchNormAct2d, EvoNorm2dS0, FilterResponseNormTlu2d, ClassifierHead, \
-    DropPath, AvgPool2dSame, create_pool2d, StdConv2d, create_conv2d, get_act_layer, get_norm_act_layer, make_divisible
+    DropPath, calculate_drop_path_rates, AvgPool2dSame, create_pool2d, StdConv2d, create_conv2d, get_act_layer, get_norm_act_layer, make_divisible
 from ._builder import build_model_with_cfg
 from ._features import feature_take_indices
 from ._manipulate import checkpoint_seq, named_apply, adapt_input_conv
@@ -64,6 +64,8 @@ class PreActBasic(nn.Module):
             norm_layer: Optional[Callable] = None,
             proj_layer: Optional[Callable] = None,
             drop_path_rate: float = 0.,
+            device=None,
+            dtype=None,
     ):
         """Initialize PreActBasic block.
 
@@ -81,6 +83,7 @@ class PreActBasic(nn.Module):
             proj_layer: Projection/downsampling layer type.
             drop_path_rate: Stochastic depth drop rate.
         """
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         first_dilation = first_dilation or dilation
         conv_layer = conv_layer or StdConv2d
@@ -98,14 +101,15 @@ class PreActBasic(nn.Module):
                 preact=True,
                 conv_layer=conv_layer,
                 norm_layer=norm_layer,
+                **dd,
             )
         else:
             self.downsample = None
 
-        self.norm1 = norm_layer(in_chs)
-        self.conv1 = conv_layer(in_chs, mid_chs, 3, stride=stride, dilation=first_dilation, groups=groups)
-        self.norm2 = norm_layer(mid_chs)
-        self.conv2 = conv_layer(mid_chs, out_chs, 3, dilation=dilation, groups=groups)
+        self.norm1 = norm_layer(in_chs, **dd)
+        self.conv1 = conv_layer(in_chs, mid_chs, 3, stride=stride, dilation=first_dilation, groups=groups, **dd)
+        self.norm2 = norm_layer(mid_chs, **dd)
+        self.conv2 = conv_layer(mid_chs, out_chs, 3, dilation=dilation, groups=groups, **dd)
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0 else nn.Identity()
 
     def zero_init_last(self) -> None:
@@ -158,6 +162,8 @@ class PreActBottleneck(nn.Module):
             norm_layer: Optional[Callable] = None,
             proj_layer: Optional[Callable] = None,
             drop_path_rate: float = 0.,
+            device=None,
+            dtype=None,
     ):
         """Initialize PreActBottleneck block.
 
@@ -175,6 +181,7 @@ class PreActBottleneck(nn.Module):
             proj_layer: Projection/downsampling layer type.
             drop_path_rate: Stochastic depth drop rate.
         """
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         first_dilation = first_dilation or dilation
         conv_layer = conv_layer or StdConv2d
@@ -192,16 +199,17 @@ class PreActBottleneck(nn.Module):
                 preact=True,
                 conv_layer=conv_layer,
                 norm_layer=norm_layer,
+                **dd,
             )
         else:
             self.downsample = None
 
-        self.norm1 = norm_layer(in_chs)
-        self.conv1 = conv_layer(in_chs, mid_chs, 1)
-        self.norm2 = norm_layer(mid_chs)
-        self.conv2 = conv_layer(mid_chs, mid_chs, 3, stride=stride, dilation=first_dilation, groups=groups)
-        self.norm3 = norm_layer(mid_chs)
-        self.conv3 = conv_layer(mid_chs, out_chs, 1)
+        self.norm1 = norm_layer(in_chs, **dd)
+        self.conv1 = conv_layer(in_chs, mid_chs, 1, **dd)
+        self.norm2 = norm_layer(mid_chs, **dd)
+        self.conv2 = conv_layer(mid_chs, mid_chs, 3, stride=stride, dilation=first_dilation, groups=groups, **dd)
+        self.norm3 = norm_layer(mid_chs, **dd)
+        self.conv3 = conv_layer(mid_chs, out_chs, 1, **dd)
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0 else nn.Identity()
 
     def zero_init_last(self) -> None:
@@ -249,7 +257,10 @@ class Bottleneck(nn.Module):
             norm_layer: Optional[Callable] = None,
             proj_layer: Optional[Callable] = None,
             drop_path_rate: float = 0.,
+            device=None,
+            dtype=None,
     ):
+        dd = {'device': device, 'dtype': dtype}
         super().__init__()
         first_dilation = first_dilation or dilation
         act_layer = act_layer or nn.ReLU
@@ -267,16 +278,17 @@ class Bottleneck(nn.Module):
                 preact=False,
                 conv_layer=conv_layer,
                 norm_layer=norm_layer,
+                **dd,
             )
         else:
             self.downsample = None
 
-        self.conv1 = conv_layer(in_chs, mid_chs, 1)
-        self.norm1 = norm_layer(mid_chs)
-        self.conv2 = conv_layer(mid_chs, mid_chs, 3, stride=stride, dilation=first_dilation, groups=groups)
-        self.norm2 = norm_layer(mid_chs)
-        self.conv3 = conv_layer(mid_chs, out_chs, 1)
-        self.norm3 = norm_layer(out_chs, apply_act=False)
+        self.conv1 = conv_layer(in_chs, mid_chs, 1, **dd)
+        self.norm1 = norm_layer(mid_chs, **dd)
+        self.conv2 = conv_layer(mid_chs, mid_chs, 3, stride=stride, dilation=first_dilation, groups=groups, **dd)
+        self.norm2 = norm_layer(mid_chs, **dd)
+        self.conv3 = conv_layer(mid_chs, out_chs, 1, **dd)
+        self.norm3 = norm_layer(out_chs, apply_act=False, **dd)
         self.drop_path = DropPath(drop_path_rate) if drop_path_rate > 0 else nn.Identity()
         self.act3 = act_layer(inplace=True)
 
@@ -324,10 +336,13 @@ class DownsampleConv(nn.Module):
             preact: bool = True,
             conv_layer: Optional[Callable] = None,
             norm_layer: Optional[Callable] = None,
+            device=None,
+            dtype=None,
     ):
-        super(DownsampleConv, self).__init__()
-        self.conv = conv_layer(in_chs, out_chs, 1, stride=stride)
-        self.norm = nn.Identity() if preact else norm_layer(out_chs, apply_act=False)
+        dd = {'device': device, 'dtype': dtype}
+        super().__init__()
+        self.conv = conv_layer(in_chs, out_chs, 1, stride=stride, **dd)
+        self.norm = nn.Identity() if preact else norm_layer(out_chs, apply_act=False, **dd)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.
@@ -354,16 +369,19 @@ class DownsampleAvg(nn.Module):
             preact: bool = True,
             conv_layer: Optional[Callable] = None,
             norm_layer: Optional[Callable] = None,
+            device=None,
+            dtype=None,
     ):
-        super(DownsampleAvg, self).__init__()
+        dd = {'device': device, 'dtype': dtype}
+        super().__init__()
         avg_stride = stride if dilation == 1 else 1
         if stride > 1 or dilation > 1:
             avg_pool_fn = AvgPool2dSame if avg_stride == 1 and dilation > 1 else nn.AvgPool2d
             self.pool = avg_pool_fn(2, avg_stride, ceil_mode=True, count_include_pad=False)
         else:
             self.pool = nn.Identity()
-        self.conv = conv_layer(in_chs, out_chs, 1, stride=1)
-        self.norm = nn.Identity() if preact else norm_layer(out_chs, apply_act=False)
+        self.conv = conv_layer(in_chs, out_chs, 1, stride=1, **dd)
+        self.norm = nn.Identity() if preact else norm_layer(out_chs, apply_act=False, **dd)
 
     def forward(self, x: torch.Tensor) -> torch.Tensor:
         """Forward pass.
@@ -396,7 +414,7 @@ class ResNetStage(nn.Module):
             norm_layer: Optional[Callable] = None,
             **block_kwargs: Any,
     ):
-        super(ResNetStage, self).__init__()
+        super().__init__()
         self.grad_checkpointing = False
 
         first_dilation = 1 if dilation in (1, 2) else 2
@@ -459,7 +477,10 @@ def create_resnetv2_stem(
         preact: bool = True,
         conv_layer: Callable = StdConv2d,
         norm_layer: Callable = partial(GroupNormAct, num_groups=32),
+        device=None,
+        dtype=None,
 ) -> nn.Sequential:
+    dd = {'device': device, 'dtype': dtype}
     stem = OrderedDict()
     assert stem_type in ('', 'fixed', 'same', 'deep', 'deep_fixed', 'deep_same', 'tiered')
 
@@ -470,18 +491,18 @@ def create_resnetv2_stem(
             stem_chs = (3 * out_chs // 8, out_chs // 2)  # 'T' resnets in resnet.py
         else:
             stem_chs = (out_chs // 2, out_chs // 2)  # 'D' ResNets
-        stem['conv1'] = conv_layer(in_chs, stem_chs[0], kernel_size=3, stride=2)
-        stem['norm1'] = norm_layer(stem_chs[0])
-        stem['conv2'] = conv_layer(stem_chs[0], stem_chs[1], kernel_size=3, stride=1)
-        stem['norm2'] = norm_layer(stem_chs[1])
-        stem['conv3'] = conv_layer(stem_chs[1], out_chs, kernel_size=3, stride=1)
+        stem['conv1'] = conv_layer(in_chs, stem_chs[0], kernel_size=3, stride=2, **dd)
+        stem['norm1'] = norm_layer(stem_chs[0], **dd)
+        stem['conv2'] = conv_layer(stem_chs[0], stem_chs[1], kernel_size=3, stride=1, **dd)
+        stem['norm2'] = norm_layer(stem_chs[1], **dd)
+        stem['conv3'] = conv_layer(stem_chs[1], out_chs, kernel_size=3, stride=1, **dd)
         if not preact:
-            stem['norm3'] = norm_layer(out_chs)
+            stem['norm3'] = norm_layer(out_chs, **dd)
     else:
         # The usual 7x7 stem conv
-        stem['conv'] = conv_layer(in_chs, out_chs, kernel_size=7, stride=2)
+        stem['conv'] = conv_layer(in_chs, out_chs, kernel_size=7, stride=2, **dd)
         if not preact:
-            stem['norm'] = norm_layer(out_chs)
+            stem['norm'] = norm_layer(out_chs, **dd)
 
     if 'fixed' in stem_type:
         # 'fixed' SAME padding approximation that is used in BiT models
@@ -522,6 +543,8 @@ class ResNetV2(nn.Module):
             drop_rate: float = 0.,
             drop_path_rate: float = 0.,
             zero_init_last: bool = False,
+            device=None,
+            dtype=None,
     ):
         """
         Args:
@@ -544,7 +567,9 @@ class ResNetV2(nn.Module):
             zero_init_last: zero-init last weight in residual path (default: False)
         """
         super().__init__()
+        dd = {'device': device, 'dtype': dtype}
         self.num_classes = num_classes
+        self.in_chans = in_chans
         self.drop_rate = drop_rate
         wf = width_factor
         norm_layer = get_norm_act_layer(norm_layer, act_layer=act_layer)
@@ -559,6 +584,7 @@ class ResNetV2(nn.Module):
             preact,
             conv_layer=conv_layer,
             norm_layer=norm_layer,
+            **dd,
         )
         stem_feat = ('stem.conv3' if is_stem_deep(stem_type) else 'stem.conv') if preact else 'stem.norm'
         self.feature_info.append(dict(num_chs=stem_chs, reduction=2, module=stem_feat))
@@ -566,7 +592,7 @@ class ResNetV2(nn.Module):
         prev_chs = stem_chs
         curr_stride = 4
         dilation = 1
-        block_dprs = [x.tolist() for x in torch.linspace(0, drop_path_rate, sum(layers)).split(layers)]
+        block_dprs = calculate_drop_path_rates(drop_path_rate, layers, stagewise=True)
         if preact:
             block_fn = PreActBasic if basic else PreActBottleneck
         else:
@@ -592,6 +618,7 @@ class ResNetV2(nn.Module):
                 norm_layer=norm_layer,
                 block_dpr=bdpr,
                 block_fn=block_fn,
+                **dd,
             )
             prev_chs = out_chs
             curr_stride *= stride
@@ -599,13 +626,14 @@ class ResNetV2(nn.Module):
             self.stages.add_module(str(stage_idx), stage)
 
         self.num_features = self.head_hidden_size = prev_chs
-        self.norm = norm_layer(self.num_features) if preact else nn.Identity()
+        self.norm = norm_layer(self.num_features, **dd) if preact else nn.Identity()
         self.head = ClassifierHead(
             self.num_features,
             num_classes,
             pool_type=global_pool,
             drop_rate=self.drop_rate,
             use_conv=True,
+            **dd,
         )
 
         self.init_weights(zero_init_last=zero_init_last)
@@ -872,6 +900,7 @@ def _cfg(url: str = '', **kwargs: Any) -> Dict[str, Any]:
         'crop_pct': 0.875, 'interpolation': 'bilinear',
         'mean': IMAGENET_INCEPTION_MEAN, 'std': IMAGENET_INCEPTION_STD,
         'first_conv': 'stem.conv', 'classifier': 'head.fc',
+        'license': 'apache-2.0',
         **kwargs
     }
 

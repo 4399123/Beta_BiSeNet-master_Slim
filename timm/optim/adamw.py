@@ -7,13 +7,13 @@ References for added functionality:
 
 NOTE: This impl has been deprecated in favour of torch.optim.AdamW and remains as a reference
 """
-import math
 from typing import List, Optional, Tuple
 
 import torch
 from torch import Tensor
 from torch.optim.optimizer import Optimizer
 
+from ._helpers import _check_capturable_devices, _get_value, _init_scalar
 from ._types import ParamsT
 
 
@@ -84,11 +84,6 @@ class AdamWLegacy(Optimizer):
 
     def __setstate__(self, state):
         super(AdamWLegacy, self).__setstate__(state)
-        state_values = list(self.state.values())
-        step_is_tensor = (len(state_values) != 0) and torch.is_tensor(state_values[0]['step'])
-        if not step_is_tensor:
-            for s in state_values:
-                s['step'] = torch.tensor(float(s['step']))
         for group in self.param_groups:
             group.setdefault('amsgrad', False)
             group.setdefault('caution', False)
@@ -96,6 +91,13 @@ class AdamWLegacy(Optimizer):
             group.setdefault('foreach', None)
             group.setdefault('maximize', False)
             group.setdefault('capturable', False)
+            for p in group['params']:
+                p_state = self.state.get(p, {})
+                if p_state and 'step' in p_state:
+                    p_state['step'] = _init_scalar(
+                        p_state['step'],
+                        device=p.device if group['capturable'] else 'cpu',
+                    )
 
     @torch.no_grad()
     def step(self, closure=None):
@@ -105,7 +107,10 @@ class AdamWLegacy(Optimizer):
             closure (callable, optional): A closure that reevaluates the model
                 and returns the loss.
         """
-        self._cuda_graph_capture_health_check()
+        if hasattr(self, '_accelerator_graph_capture_health_check'):
+            self._accelerator_graph_capture_health_check()
+        elif hasattr(self, '_cuda_graph_capture_health_check'):
+            self._cuda_graph_capture_health_check()
 
         loss = None
         if closure is not None:
@@ -134,7 +139,7 @@ class AdamWLegacy(Optimizer):
 
                 # State initialization
                 if len(state) == 0:
-                    state['step'] = torch.tensor(0.)
+                    state['step'] = _init_scalar(device=p.device if group['capturable'] else 'cpu')
                     # Exponential moving average of gradient values
                     state['exp_avg'] = torch.zeros_like(p, memory_format=torch.preserve_format)
                     # Exponential moving average of squared gradient values
@@ -205,7 +210,10 @@ def adamw(
         try:
             # cannot do foreach if this overload doesn't exist when caution enabled
             foreach = not caution or 'Scalar' in torch.ops.aten._foreach_maximum_.overloads()
-        except:
+            # Match native PyTorch: tensor lr without capturable mode is supported by the single-tensor path.
+            if foreach and torch.is_tensor(lr) and not capturable:
+                foreach = False
+        except Exception:
             foreach = False
 
     if foreach and not torch.jit.is_scripting():
@@ -252,6 +260,8 @@ def _single_tensor_adamw(
         capturable: bool,
         max_lr: Optional[float],
 ):
+    if capturable:
+        _check_capturable_devices(params, state_steps)
 
     for i, param in enumerate(params):
         grad = grads[i] if not maximize else -grads[i]
@@ -302,11 +312,11 @@ def _single_tensor_adamw(
 
             param.addcdiv_(exp_avg, denom)
         else:
-            step = step_t.item()
+            step = _get_value(step_t)
             bias_correction1 = 1 - beta1 ** step
             bias_correction2 = 1 - beta2 ** step
             step_size = lr / bias_correction1
-            bias_correction2_sqrt = math.sqrt(bias_correction2)
+            bias_correction2_sqrt = bias_correction2 ** 0.5
 
             denom = (denom_base.sqrt() / bias_correction2_sqrt).add_(eps)
 
@@ -342,9 +352,7 @@ def _multi_tensor_adamw(
         return
 
     if capturable:
-        assert all(
-            p.is_cuda and step.is_cuda for p, step in zip(params, state_steps)
-        ), "If capturable=True, params and state_steps must be CUDA tensors."
+        _check_capturable_devices(params, state_steps)
 
     if maximize:
         grads = torch._foreach_neg(tuple(grads))  # type: ignore[assignment]
@@ -414,12 +422,12 @@ def _multi_tensor_adamw(
 
         torch._foreach_addcdiv_(params, exp_avgs, denom)
     else:
-        bias_correction1 = [1 - beta1 ** step.item() for step in state_steps]
-        bias_correction2 = [1 - beta2 ** step.item() for step in state_steps]
+        bias_correction1 = [1 - beta1 ** _get_value(step) for step in state_steps]
+        bias_correction2 = [1 - beta2 ** _get_value(step) for step in state_steps]
 
         step_size = [(lr / bc) * -1 for bc in bias_correction1]
 
-        bias_correction2_sqrt = [math.sqrt(bc) for bc in bias_correction2]
+        bias_correction2_sqrt = [bc ** 0.5 for bc in bias_correction2]
 
         if amsgrad:
             # Maintains the maximum of all 2nd moment running avg. till now
@@ -442,4 +450,8 @@ def _multi_tensor_adamw(
             torch._foreach_div_(masks, mask_scale)
             exp_avgs = torch._foreach_mul(exp_avgs, masks)
 
-        torch._foreach_addcdiv_(params, exp_avgs, denom, step_size)
+        # Fold the step sizes into the denominator. _foreach_div_ accepts the list
+        # of scalar tensors produced under torch.compile, while the ScalarList
+        # overload of _foreach_addcdiv_ does not.
+        torch._foreach_div_(denom, step_size)
+        torch._foreach_addcdiv_(params, exp_avgs, denom)

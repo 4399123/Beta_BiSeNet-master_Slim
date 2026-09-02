@@ -27,14 +27,12 @@ except ImportError:
     from typing_extensions import Literal
 
 from timm import __version__
-from timm.models._pretrained import filter_pretrained_cfg
+from ._helpers import _torch_load, load_state_dict
+from ._pretrained import filter_pretrained_cfg
 
 try:
-    from huggingface_hub import (
-        create_repo, get_hf_file_metadata,
-        hf_hub_download, hf_hub_url,
-        repo_type_and_id_from_hf_id, upload_folder)
-    from huggingface_hub.utils import EntryNotFoundError
+    from huggingface_hub import HfApi, hf_hub_download, model_info
+    from huggingface_hub.utils import EntryNotFoundError, RepositoryNotFoundError
     hf_hub_download = partial(hf_hub_download, library_name="timm", library_version=__version__)
     _has_hf_hub = True
 except ImportError:
@@ -216,11 +214,22 @@ def load_model_config_from_path(
 def load_state_dict_from_hf(
         model_id: str,
         filename: str = HF_WEIGHTS_NAME,
-        weights_only: bool = False,
+        weights_only: bool = True,
         cache_dir: Optional[Union[str, Path]] = None,
 ):
     assert has_hf_hub(True)
     hf_model_id, hf_revision = hf_split(model_id)
+
+    # Load directly via safetensors if that's what the filename specifies
+    if filename.endswith(".safetensors"):
+        assert _has_safetensors, "`pip install safetensors` to use .safetensors"
+        cached_safe_file = hf_hub_download(
+            repo_id=hf_model_id,
+            filename=filename,
+            revision=hf_revision,
+            cache_dir=cache_dir,
+        )
+        return safetensors.torch.load_file(cached_safe_file, device="cpu")
 
     # Look for .safetensors alternatives and load from it if it exists
     if _has_safetensors:
@@ -247,10 +256,8 @@ def load_state_dict_from_hf(
         cache_dir=cache_dir,
     )
     _logger.debug(f"[{model_id}] Safe alternative not found for '{filename}'. Loading weights using default pytorch.")
-    try:
-        state_dict = torch.load(cached_file, map_location='cpu', weights_only=weights_only)
-    except TypeError:
-        state_dict = torch.load(cached_file, map_location='cpu')
+    state_dict = _torch_load(cached_file, map_location='cpu', weights_only=weights_only)
+
     return state_dict
 
 
@@ -266,36 +273,39 @@ _PREFERRED_FILES = (
 )
 _EXT_PRIORITY = ('.safetensors', '.pth', '.pth.tar', '.bin')
 
+
 def load_state_dict_from_path(
-        path: str,
-        weights_only: bool = False,
+        path: Union[str, Path],
+        weights_only: bool = True,
 ):
+    path = Path(path)
     found_file = None
     for fname in _PREFERRED_FILES:
         p = path / fname
         if p.exists():
-            logging.info(f"Found preferred checkpoint: {p.name}")
+            _logger.info(f"Found preferred checkpoint: {p.name}")
             found_file = p
             break
 
-    # fallback: first match per‑extension class
-    for ext in _EXT_PRIORITY:
-        files = sorted(path.glob(f"*{ext}"))
-        if files:
-            if len(files) > 1:
-                logging.warning(
-                    f"Multiple {ext} checkpoints in {path}: {names}. "
-                    f"Using '{files[0].name}'."
-                )
-            found_file = files[0]
+    if found_file is None:
+        # fallback: first match per‑extension class, in extension priority order
+        for ext in _EXT_PRIORITY:
+            files = sorted(path.glob(f"*{ext}"))
+            if files:
+                if len(files) > 1:
+                    names = [f.name for f in files]
+                    _logger.warning(
+                        f"Multiple {ext} checkpoints in {path}: {names}. "
+                        f"Using '{files[0].name}'."
+                    )
+                found_file = files[0]
+                break
 
     if not found_file:
         raise RuntimeError(f"No suitable checkpoints found in {path}.")
 
-    try:
-        state_dict = torch.load(found_file, map_location='cpu', weights_only=weights_only)
-    except TypeError:
-        state_dict = torch.load(found_file, map_location='cpu')
+    state_dict = load_state_dict(found_file, weights_only=weights_only)
+
     return state_dict
 
 
@@ -414,20 +424,16 @@ def push_to_hf_hub(
             Whether to save the model using `safetensors` or the traditional PyTorch way (that uses `pickle`).
             Can be set to `"both"` in order to push both safe and unsafe weights.
     """
-    # Create repo if it doesn't exist yet
-    repo_url = create_repo(repo_id, token=token, private=private, exist_ok=True)
+    api = HfApi(token=token, library_name="timm", library_version=__version__)
 
-    # Infer complete repo_id from repo_url
+    # Create repo if it doesn't exist yet
+    repo_url = api.create_repo(repo_id, private=private, exist_ok=True)
+
     # Can be different from the input `repo_id` if repo_owner was implicit
-    _, repo_owner, repo_name = repo_type_and_id_from_hf_id(repo_url)
-    repo_id = f"{repo_owner}/{repo_name}"
+    repo_id = repo_url.repo_id
 
     # Check if README file already exist in repo
-    try:
-        get_hf_file_metadata(hf_hub_url(repo_id=repo_id, filename="README.md", revision=revision))
-        has_readme = True
-    except EntryNotFoundError:
-        has_readme = False
+    has_readme = api.file_exists(repo_id=repo_id, filename="README.md", revision=revision)
 
     # Dump model and push to Hub
     with TemporaryDirectory() as tmpdir:
@@ -449,7 +455,7 @@ def push_to_hf_hub(
             readme_path.write_text(readme_text)
 
         # Upload model and return
-        return upload_folder(
+        return api.upload_folder(
             repo_id=repo_id,
             folder_path=tmpdir,
             revision=revision,
@@ -540,3 +546,56 @@ def _get_safe_alternatives(filename: str) -> Iterable[str]:
         yield HF_OPEN_CLIP_SAFE_WEIGHTS_NAME
     if filename not in (HF_WEIGHTS_NAME, HF_OPEN_CLIP_WEIGHTS_NAME) and filename.endswith(".bin"):
         yield filename[:-4] + ".safetensors"
+
+
+def _get_license_from_hf_hub(model_id: Optional[str], hf_hub_id: Optional[str]) -> Optional[str]:
+    """Retrieve license information for a model from Hugging Face Hub.
+
+    Fetches the license field from the model card metadata on Hugging Face Hub
+    for the specified model. Returns None if the model is not found, if
+    huggingface_hub is not installed, or if the model is marked as "untrained".
+
+    Args:
+        model_id: The model identifier/name. In the case of None we assume an untrained model.
+        hf_hub_id: The Hugging Face Hub organization/user ID. If it is None,
+            we will return None as we cannot infer the license terms.
+
+    Returns:
+        The license string in lowercase if found, None otherwise.
+
+    Note:
+        Requires huggingface_hub package to be installed. Will log a warning
+        and return None if the package is not available.
+    """
+    if not has_hf_hub(True):
+        msg = "For updated license information run `pip install huggingface_hub`."
+        _logger.warning(msg=msg)
+        return None
+
+    if not (model_id and hf_hub_id):
+        return None
+
+    repo_id: str = hf_hub_id + model_id
+
+    try:
+        info = model_info(repo_id=repo_id)
+
+    except RepositoryNotFoundError:
+        msg = f"Repository {repo_id} was not found. Manual inspection of license needed."
+        _logger.warning(msg=msg)
+        return None
+
+    except Exception as _:
+        msg = f"Error for {repo_id}. Manual inspection of license needed."
+        _logger.warning(msg=msg)
+        return None
+
+    license = info.card_data.get("license").lower() if info.card_data else None
+
+    if license == 'other':
+        name = info.card_data.get("license_name", None)
+
+        if name is not None:
+            return name
+
+    return license

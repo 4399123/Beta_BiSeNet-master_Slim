@@ -31,3 +31,15 @@ trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input
 ./trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x48x384 --optShapes=input:1x3x48x384 --maxShapes=input:5x3x48x384 --useCudaGraph --verbose
 
 ./trtexec.exe --onnx=best-smi.onnx --saveEngine=best-smi.engine  --minShapes=input:1x3x112x112 --optShapes=input:1x3x112x112 --maxShapes=input:2x3x112x112  --useCudaGraph --fp16
+
+./trtexec.exe --onnx=seg_int8_ptq.onnx --saveEngine=best-smi.engine --minShapes=input:1x3x896x896 --optShapes=input:1x3x896x896 --maxShapes=input:2x3x896x896 --int8 --verbose --profilingVerbosity=detailed
+
+
+
+
+
+
+
+
+
+

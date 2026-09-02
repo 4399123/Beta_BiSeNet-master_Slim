@@ -33,10 +33,11 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
+from typing import Optional, Tuple, Type, Union
 import math
+
 from torch import nn
 import torch.nn.functional as F
-
 
 from .create_act import create_act_layer
 from .helpers import make_divisible
@@ -58,9 +59,22 @@ class EcaModule(nn.Module):
         gate_layer: gating non-linearity to use
     """
     def __init__(
-            self, channels=None, kernel_size=3, gamma=2, beta=1, act_layer=None, gate_layer='sigmoid',
-            rd_ratio=1/8, rd_channels=None, rd_divisor=8, use_mlp=False):
-        super(EcaModule, self).__init__()
+            self,
+            channels: Optional[int] = None,
+            kernel_size: int = 3,
+            gamma: float = 2,
+            beta: float = 1,
+            act_layer: Optional[Type[nn.Module]] = None,
+            gate_layer: Union[str, Type[nn.Module]] = 'sigmoid',
+            rd_ratio: float = 1/8,
+            rd_channels: Optional[int] = None,
+            rd_divisor: int = 8,
+            use_mlp: bool = False,
+            device=None,
+            dtype=None,
+    ):
+        dd = {'device': device, 'dtype': dtype}
+        super().__init__()
         if channels is not None:
             t = int(abs(math.log(channels, 2) + beta) / gamma)
             kernel_size = max(t if t % 2 else t + 1, 3)
@@ -72,11 +86,11 @@ class EcaModule(nn.Module):
             if rd_channels is None:
                 rd_channels = make_divisible(channels * rd_ratio, divisor=rd_divisor)
             act_layer = act_layer or nn.ReLU
-            self.conv = nn.Conv1d(1, rd_channels, kernel_size=1, padding=0, bias=True)
+            self.conv = nn.Conv1d(1, rd_channels, kernel_size=1, padding=0, bias=True, **dd)
             self.act = create_act_layer(act_layer)
-            self.conv2 = nn.Conv1d(rd_channels, 1, kernel_size=kernel_size, padding=padding, bias=True)
+            self.conv2 = nn.Conv1d(rd_channels, 1, kernel_size=kernel_size, padding=padding, bias=True, **dd)
         else:
-            self.conv = nn.Conv1d(1, 1, kernel_size=kernel_size, padding=padding, bias=False)
+            self.conv = nn.Conv1d(1, 1, kernel_size=kernel_size, padding=padding, bias=False, **dd)
             self.act = None
             self.conv2 = None
         self.gate = create_act_layer(gate_layer)
@@ -118,8 +132,19 @@ class CecaModule(nn.Module):
         gate_layer: gating non-linearity to use
     """
 
-    def __init__(self, channels=None, kernel_size=3, gamma=2, beta=1, act_layer=None, gate_layer='sigmoid'):
-        super(CecaModule, self).__init__()
+    def __init__(
+            self,
+            channels: Optional[int] = None,
+            kernel_size: int = 3,
+            gamma: float = 2,
+            beta: float = 1,
+            act_layer: Optional[nn.Module] = None,
+            gate_layer: Union[str, Type[nn.Module]] = 'sigmoid',
+            device=None,
+            dtype=None,
+    ):
+        dd = {'device': device, 'dtype': dtype}
+        super().__init__()
         if channels is not None:
             t = int(abs(math.log(channels, 2) + beta) / gamma)
             kernel_size = max(t if t % 2 else t + 1, 3)
@@ -130,7 +155,7 @@ class CecaModule(nn.Module):
         # see https://github.com/pytorch/pytorch/pull/17240
         # implement manual circular padding
         self.padding = (kernel_size - 1) // 2
-        self.conv = nn.Conv1d(1, 1, kernel_size=kernel_size, padding=0, bias=has_act)
+        self.conv = nn.Conv1d(1, 1, kernel_size=kernel_size, padding=0, bias=has_act, **dd)
         self.gate = create_act_layer(gate_layer)
 
     def forward(self, x):

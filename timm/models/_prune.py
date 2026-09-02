@@ -10,6 +10,15 @@ __all__ = ['extract_layer', 'set_layer', 'adapt_model_from_string', 'adapt_model
 
 
 def extract_layer(model, layer):
+    """Extract a layer from a model using dot-separated path.
+
+    Args:
+        model: PyTorch model.
+        layer: Dot-separated layer path (e.g., 'layer1.0.conv1').
+
+    Returns:
+        Extracted module.
+    """
     layer = layer.split('.')
     module = model
     if hasattr(model, 'module') and layer[0] != 'module':
@@ -28,6 +37,13 @@ def extract_layer(model, layer):
 
 
 def set_layer(model, layer, val):
+    """Set a layer in a model using dot-separated path.
+
+    Args:
+        model: PyTorch model.
+        layer: Dot-separated layer path.
+        val: New value for the layer.
+    """
     layer = layer.split('.')
     module = model
     if hasattr(model, 'module') and layer[0] != 'module':
@@ -52,6 +68,15 @@ def set_layer(model, layer, val):
 
 
 def adapt_model_from_string(parent_module, model_string):
+    """Adapt a model to pruned structure from string specification.
+
+    Args:
+        parent_module: Original model to adapt.
+        model_string: String containing layer shapes for pruned model.
+
+    Returns:
+        Adapted model with pruned layer dimensions.
+    """
     separator = '***'
     state_dict = {}
     lst_shape = model_string.split(separator)
@@ -61,6 +86,11 @@ def adapt_model_from_string(parent_module, model_string):
         shape = k[1][1:-1].split(',')
         if shape[0] != '':
             state_dict[key] = [int(i) for i in shape]
+
+    # Extract device and dtype from the parent module
+    device = next(parent_module.parameters()).device
+    dtype = next(parent_module.parameters()).dtype
+    dd = {'device': device, 'dtype': dtype}
 
     new_module = deepcopy(parent_module)
     for n, m in parent_module.named_modules():
@@ -78,27 +108,48 @@ def adapt_model_from_string(parent_module, model_string):
                 in_channels = out_channels
                 g = in_channels
             new_conv = conv(
-                in_channels=in_channels, out_channels=out_channels, kernel_size=old_module.kernel_size,
-                bias=old_module.bias is not None, padding=old_module.padding, dilation=old_module.dilation,
-                groups=g, stride=old_module.stride)
+                in_channels=in_channels,
+                out_channels=out_channels,
+                kernel_size=old_module.kernel_size,
+                bias=old_module.bias is not None,
+                padding=old_module.padding,
+                dilation=old_module.dilation,
+                groups=g,
+                stride=old_module.stride,
+                **dd,
+            )
             set_layer(new_module, n, new_conv)
         elif isinstance(old_module, BatchNormAct2d):
             new_bn = BatchNormAct2d(
-                state_dict[n + '.weight'][0], eps=old_module.eps, momentum=old_module.momentum,
-                affine=old_module.affine, track_running_stats=True)
+                state_dict[n + '.weight'][0],
+                eps=old_module.eps,
+                momentum=old_module.momentum,
+                affine=old_module.affine,
+                track_running_stats=True,
+                **dd,
+            )
             new_bn.drop = old_module.drop
             new_bn.act = old_module.act
             set_layer(new_module, n, new_bn)
         elif isinstance(old_module, nn.BatchNorm2d):
             new_bn = nn.BatchNorm2d(
-                num_features=state_dict[n + '.weight'][0], eps=old_module.eps, momentum=old_module.momentum,
-                affine=old_module.affine, track_running_stats=True)
+                num_features=state_dict[n + '.weight'][0],
+                eps=old_module.eps,
+                momentum=old_module.momentum,
+                affine=old_module.affine,
+                track_running_stats=True,
+                **dd,
+            )
             set_layer(new_module, n, new_bn)
         elif isinstance(old_module, nn.Linear):
             # FIXME extra checks to ensure this is actually the FC classifier layer and not a diff Linear layer?
             num_features = state_dict[n + '.weight'][1]
             new_fc = Linear(
-                in_features=num_features, out_features=old_module.out_features, bias=old_module.bias is not None)
+                in_features=num_features,
+                out_features=old_module.out_features,
+                bias=old_module.bias is not None,
+                **dd,
+            )
             set_layer(new_module, n, new_fc)
             if hasattr(new_module, 'num_features'):
                 if getattr(new_module, 'head_hidden_size', 0) == new_module.num_features:
@@ -112,5 +163,14 @@ def adapt_model_from_string(parent_module, model_string):
 
 
 def adapt_model_from_file(parent_module, model_variant):
+    """Adapt a model to pruned structure from file specification.
+
+    Args:
+        parent_module: Original model to adapt.
+        model_variant: Name of pruned model variant file.
+
+    Returns:
+        Adapted model with pruned layer dimensions.
+    """
     adapt_data = pkgutil.get_data(__name__, os.path.join('_pruned', model_variant + '.txt'))
     return adapt_model_from_string(parent_module, adapt_data.decode('utf-8').strip())

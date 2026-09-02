@@ -53,10 +53,8 @@ printlabels = ['background', 'QPZZ', 'MDBD', 'MNYW', 'WW', 'LMPS', 'BMQQ', 'LMHH
 
 def parse_args():
     parse = argparse.ArgumentParser()
-    # parse.add_argument('--config', dest='config', type=str,
-    #         default='../configs/bisenetv1_blueface_caformer_s36.py',)
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/fastefficientbisenet_blueface_inceptionnext_tiny_pro_max.py', )
+                       default='../configs/fastefficientbisenet_blueface_cpubone_nano_reparam.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
     parse.add_argument('--scale-epochs-with-world-size', dest='scale_epochs',

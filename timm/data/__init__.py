@@ -4,7 +4,7 @@ from .config import resolve_data_config, resolve_model_data_config
 from .constants import *
 from .dataset import ImageDataset, IterableImageDataset, AugMixDataset
 from .dataset_factory import create_dataset
-from .dataset_info import DatasetInfo, CustomDatasetInfo
+from .dataset_info import CustomDatasetInfo, DatasetInfo, DatasetInfoLabelMapper, LabelMappingCoverage
 from .imagenet_info import ImageNetInfo, infer_imagenet_subset
 from .loader import create_loader
 from .mixup import Mixup, FastCollateMixup
@@ -20,6 +20,7 @@ from .naflex_transforms import (
     Patchify,
     patchify_image,
 )
+from .scheduled_sampler import ScheduledBatchSampler, ScheduledTransformDataset
 from .readers import create_reader
 from .readers import get_img_extensions, is_img_extension, set_img_extensions, add_img_extensions, del_img_extensions
 from .real_labels import RealLabelsImagenet

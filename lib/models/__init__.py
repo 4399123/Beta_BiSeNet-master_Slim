@@ -91,6 +91,10 @@ from .fastefficientbisenet_hgnetv2_b6  import FastEfficientBiSeNet_HGNetV2_B6
 from .fastefficientbisenet_inceptionnext_tiny  import FastEfficientBiSeNet_InceptionNeXt_Tiny
 from .fastefficientbisenet_inceptionnext_tiny_pro  import FastEfficientBiSeNet_InceptionNeXt_Tiny_Pro
 from .fastefficientbisenet_inceptionnext_tiny_pro_max  import FastEfficientBiSeNet_InceptionNeXt_Tiny_Pro_Max
+from .fastefficientbisenet_fasternet_t0_reparam  import FastEfficientBiSeNet_FasterNet_T0_Reparam
+from .fastefficientbisenet_repvit_m0_9_reparam   import FastEfficientBiSeNet_RepVit_M0_9_Reparam
+from .fastefficientbisenet_cpubone_nano_reparam   import FastEfficientBiSeNet_CPUBone_Nano_Reparam
+from .fastefficientbisenet_inceptionnext_atto_sppf  import FastEfficientBiSeNet_InceptionNeXt_Atto_SPPF
 
 #fastefficientformerseg
 from .fastefficientformerseg_efficientnetv2_b3 import FastEfficientFormerSeg_EfficientNetV2_B3
@@ -182,4 +186,8 @@ model_factory = {
     'fastefficientbisenet_inceptionnext_tiny': FastEfficientBiSeNet_InceptionNeXt_Tiny,
     'fastefficientbisenet_inceptionnext_tiny_pro': FastEfficientBiSeNet_InceptionNeXt_Tiny_Pro,
     'fastefficientbisenet_inceptionnext_tiny_pro_max': FastEfficientBiSeNet_InceptionNeXt_Tiny_Pro_Max,
+    'fastefficientbisenet_fasternet_t0_reparam': FastEfficientBiSeNet_FasterNet_T0_Reparam,
+    'fastefficientbisenet_repvit_m0_9_reparam': FastEfficientBiSeNet_RepVit_M0_9_Reparam,
+    'fastefficientbisenet_cpubone_nano_reparam': FastEfficientBiSeNet_CPUBone_Nano_Reparam,
+    'fastefficientbisenet_inceptionnext_atto_sppf': FastEfficientBiSeNet_InceptionNeXt_Atto_SPPF,
 }
