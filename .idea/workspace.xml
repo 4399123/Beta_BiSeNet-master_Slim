@@ -5,208 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="af36840f-6835-49f5-a8d1-87d380c427c8" name="更改" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_fasternet_t0.py" beforeDir="false" afterPath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_fasternet_t0.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_fasternet_t2.py" beforeDir="false" afterPath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_fasternet_t2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_shvit_s1.py" beforeDir="false" afterPath="$PROJECT_DIR$/configs/fastefficientbisenet_blueface_shvit_s1.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/docker_use.txt" beforeDir="false" afterPath="$PROJECT_DIR$/docker_use.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/models/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/lib/models/fastefficientbisenet_shvit_s1.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/fastefficientbisenet_shvit_s1.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/dataset.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/dataset.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/dataset_info.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/dataset_info.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/loader.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/loader.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/naflex_dataset.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/naflex_dataset.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/naflex_loader.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/naflex_loader.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/naflex_transforms.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/naflex_transforms.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/readers/class_map.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/readers/class_map.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/readers/reader_image_in_tar.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/readers/reader_image_in_tar.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/transforms.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/transforms.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/data/transforms_factory.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/transforms_factory.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/activations.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/activations.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/activations_me.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/activations_me.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/adaptive_avgmax_pool.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/adaptive_avgmax_pool.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/attention.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/attention.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/attention2d.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/attention2d.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/attention_pool.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/attention_pool.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/attention_pool2d.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/attention_pool2d.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/blur_pool.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/blur_pool.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/bottleneck_attn.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/bottleneck_attn.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/cbam.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/cbam.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/classifier.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/classifier.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/cond_conv2d.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/cond_conv2d.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/conv2d_same.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/conv2d_same.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/conv_bn_act.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/conv_bn_act.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/create_attn.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/create_attn.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/drop.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/drop.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/eca.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/eca.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/evo_norm.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/evo_norm.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/fast_norm.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/fast_norm.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/filter_response_norm.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/filter_response_norm.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/format.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/format.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/gather_excite.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/gather_excite.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/global_context.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/global_context.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/grn.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/grn.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/halo_attn.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/halo_attn.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/helpers.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/helpers.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/hybrid_embed.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/hybrid_embed.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/inplace_abn.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/inplace_abn.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/lambda_layer.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/lambda_layer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/layer_scale.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/layer_scale.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/median_pool.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/median_pool.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/mixed_conv2d.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/mixed_conv2d.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/ml_decoder.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/ml_decoder.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/mlp.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/mlp.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/non_local_attn.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/non_local_attn.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/norm.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/norm.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/norm_act.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/norm_act.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/patch_embed.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/patch_embed.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/pool1d.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/pool1d.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/pool2d_same.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/pool2d_same.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/pos_embed.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/pos_embed.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/pos_embed_rel.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/pos_embed_rel.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/pos_embed_sincos.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/pos_embed_sincos.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/selective_kernel.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/selective_kernel.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/separable_conv.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/separable_conv.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/space_to_depth.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/space_to_depth.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/split_attn.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/split_attn.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/split_batchnorm.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/split_batchnorm.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/squeeze_excite.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/squeeze_excite.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/std_conv.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/std_conv.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/test_time_pool.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/test_time_pool.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/layers/weight_init.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/layers/weight_init.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/_efficientnet_blocks.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/_efficientnet_blocks.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/_efficientnet_builder.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/_efficientnet_builder.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/_factory.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/_factory.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/_features.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/_features.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/_helpers.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/_helpers.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/_hub.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/_hub.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/_manipulate.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/_manipulate.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/_prune.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/_prune.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/beit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/beit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/byoanet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/byoanet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/byobnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/byobnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/cait.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/cait.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/coat.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/coat.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/convit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/convit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/convmixer.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/convmixer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/convnext.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/convnext.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/crossvit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/crossvit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/cspnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/cspnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/davit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/davit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/deit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/deit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/densenet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/densenet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/dla.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/dla.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/dpn.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/dpn.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/edgenext.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/edgenext.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/efficientformer.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/efficientformer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/efficientformer_v2.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/efficientformer_v2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/efficientnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/efficientnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/efficientvit_mit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/efficientvit_mit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/efficientvit_msra.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/efficientvit_msra.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/eva.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/eva.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/fasternet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/fasternet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/fastvit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/fastvit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/focalnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/focalnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/gcvit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/gcvit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/ghostnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/ghostnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/hardcorenas.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/hardcorenas.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/hgnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/hgnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/hiera.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/hiera.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/hieradet_sam2.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/hieradet_sam2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/hrnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/hrnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/inception_next.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/inception_next.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/inception_resnet_v2.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/inception_resnet_v2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/inception_v3.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/inception_v3.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/inception_v4.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/inception_v4.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/layers/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/layers/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/levit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/levit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/mambaout.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/mambaout.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/maxxvit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/maxxvit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/metaformer.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/metaformer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/mlp_mixer.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/mlp_mixer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/mobilenetv3.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/mobilenetv3.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/mobilenetv5.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/mobilenetv5.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/mobilevit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/mobilevit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/mvitv2.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/mvitv2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/naflexvit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/naflexvit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/nasnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/nasnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/nest.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/nest.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/nextvit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/nextvit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/nfnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/nfnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/pit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/pit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/pnasnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/pnasnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/pvt_v2.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/pvt_v2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/rdnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/rdnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/regnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/regnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/repghost.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/repghost.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/repvit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/repvit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/res2net.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/res2net.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/resnest.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/resnest.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/resnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/resnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/resnetv2.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/resnetv2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/rexnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/rexnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/selecsls.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/selecsls.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/senet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/senet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/sequencer.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/sequencer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/shvit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/shvit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/sknet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/sknet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/starnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/starnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/swiftformer.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/swiftformer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/swin_transformer.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/swin_transformer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/swin_transformer_v2.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/swin_transformer_v2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/swin_transformer_v2_cr.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/swin_transformer_v2_cr.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/tiny_vit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/tiny_vit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/tnt.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/tnt.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/tresnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/tresnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/twins.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/twins.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/vgg.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/vgg.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/visformer.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/visformer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/vision_transformer.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/vision_transformer.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/vision_transformer_hybrid.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/vision_transformer_hybrid.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/vision_transformer_relpos.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/vision_transformer_relpos.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/vision_transformer_sam.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/vision_transformer_sam.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/vitamin.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/vitamin.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/volo.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/volo.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/vovnet.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/vovnet.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/xception.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/xception.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/xception_aligned.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/xception_aligned.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/models/xcit.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/models/xcit.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/__init__.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/_optim_factory.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/_optim_factory.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/_param_groups.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/_param_groups.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/_types.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/_types.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/adamp.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/adamp.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/adamw.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/adamw.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/adan.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/adan.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/adopt.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/adopt.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/kron.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/kron.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/lamb.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/lamb.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/laprop.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/laprop.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/lion.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/lion.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/nadamw.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/nadamw.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/rmsprop_tf.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/rmsprop_tf.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/optim/sgdp.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/optim/sgdp.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/scheduler/cosine_lr.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/scheduler/cosine_lr.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/scheduler/multistep_lr.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/scheduler/multistep_lr.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/scheduler/plateau_lr.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/scheduler/plateau_lr.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/scheduler/poly_lr.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/scheduler/poly_lr.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/scheduler/scheduler.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/scheduler/scheduler.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/scheduler/scheduler_factory.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/scheduler/scheduler_factory.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/scheduler/step_lr.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/scheduler/step_lr.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/scheduler/tanh_lr.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/scheduler/tanh_lr.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/utils/checkpoint_saver.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/utils/checkpoint_saver.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/utils/metrics.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/utils/metrics.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/utils/misc.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/utils/misc.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/utils/model_ema.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/utils/model_ema.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/timm/version.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/version.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell_v2.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell_v2.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/export_onnx.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/tools/export_onnx_fp16.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx_fp16.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/trt命令.txt" beforeDir="false" afterPath="$PROJECT_DIR$/trt命令.txt" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/测试数据.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/测试数据.xlsx" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/onnx/best_fp16.onnx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/tools/export_onnx_新方案.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx_新方案.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -263,8 +63,8 @@
       <recent name="D:\F\ABlueFaceProj\20240618\Seg\Beta_BiSeNet-master_Slim\lib\models" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.onnxrun">
-    <configuration name="eval_onnx_quantized" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+  <component name="RunManager" selected="Python.onnxrun-int8">
+    <configuration name="export_onnx_fp16" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Beta_BiSeNet-master_Slim" />
       <option name="ENV_FILES" value="" />
       <option name="INTERPRETER_OPTIONS" value="" />
@@ -277,29 +77,7 @@
       <option name="IS_MODULE_SDK" value="true" />
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tools/eval_onnx_quantized.py" />
-      <option name="PARAMETERS" value="" />
-      <option name="SHOW_COMMAND_LINE" value="false" />
-      <option name="EMULATE_TERMINAL" value="false" />
-      <option name="MODULE_MODE" value="false" />
-      <option name="REDIRECT_INPUT" value="false" />
-      <option name="INPUT_FILE" value="" />
-      <method v="2" />
-    </configuration>
-    <configuration name="export_onnx" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
-      <module name="Beta_BiSeNet-master_Slim" />
-      <option name="ENV_FILES" value="" />
-      <option name="INTERPRETER_OPTIONS" value="" />
-      <option name="PARENT_ENVS" value="true" />
-      <envs>
-        <env name="PYTHONUNBUFFERED" value="1" />
-      </envs>
-      <option name="SDK_HOME" value="" />
-      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tools" />
-      <option name="IS_MODULE_SDK" value="true" />
-      <option name="ADD_CONTENT_ROOTS" value="true" />
-      <option name="ADD_SOURCE_ROOTS" value="true" />
-      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tools/export_onnx.py" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tools/export_onnx_fp16.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -322,6 +100,28 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tools/export_onnx_int8.py" />
+      <option name="PARAMETERS" value="" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="onnxrun-fp16" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="Beta_BiSeNet-master_Slim" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$/tools" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/tools/onnxrun-fp16.py" />
       <option name="PARAMETERS" value="" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
@@ -376,11 +176,11 @@
     </configuration>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.onnxrun-int8" />
+        <item itemvalue="Python.onnxrun-fp16" />
         <item itemvalue="Python.onnxrun" />
         <item itemvalue="Python.export_onnx_int8" />
-        <item itemvalue="Python.export_onnx" />
-        <item itemvalue="Python.eval_onnx_quantized" />
-        <item itemvalue="Python.onnxrun-int8" />
+        <item itemvalue="Python.export_onnx_fp16" />
       </list>
     </recent_temporary>
   </component>
