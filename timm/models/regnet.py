@@ -32,7 +32,7 @@ import torch
 import torch.nn as nn
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.layers import ClassifierHead, AvgPool2dSame, ConvNormAct, SEModule, DropPath, GroupNormAct, calculate_drop_path_rates
+from timm.layers import ClassifierHead, AvgPool2dSame, ConvNormAct, SEModule, DropPath, GroupNormAct, calculate_drop_path_rates, get_device_dtype
 from timm.layers import get_act_layer, get_norm_act_layer, create_conv2d, make_divisible
 from ._builder import build_model_with_cfg
 from ._features import feature_take_indices
@@ -128,11 +128,11 @@ def generate_regnet(
     # TODO dWr scaling?
     # depth = int(depth * (scale ** 0.1))
     # width_scale = scale ** 0.4  # dWr scale, exp 0.8 / 2, applied to both group and layer widths
-    widths_cont = torch.arange(depth, dtype=torch.float32) * width_slope + width_initial
+    widths_cont = torch.arange(depth, device='cpu', dtype=torch.float32) * width_slope + width_initial
     width_exps = torch.round(torch.log(widths_cont / width_initial) / math.log(width_mult))
     widths = torch.round((width_initial * torch.pow(width_mult, width_exps)) / quant) * quant
     num_stages, max_stage = len(torch.unique(widths)), int(width_exps.max().item()) + 1
-    groups = torch.tensor([group_size for _ in range(num_stages)], dtype=torch.int32)
+    groups = torch.tensor([group_size for _ in range(num_stages)], device='cpu', dtype=torch.int32)
     return widths.int().tolist(), num_stages, groups.tolist()
 
 
@@ -668,7 +668,7 @@ class RegNet(nn.Module):
         widths, num_stages, stage_gs = generate_regnet(cfg.wa, cfg.w0, cfg.wm, cfg.depth, cfg.group_size)
 
         # Convert to per stage format
-        stage_widths, stage_depths = torch.unique(torch.tensor(widths), return_counts=True)
+        stage_widths, stage_depths = torch.unique(torch.tensor(widths, device='cpu'), return_counts=True)
         stage_widths, stage_depths = stage_widths.tolist(), stage_depths.tolist()
         stage_br = [cfg.bottle_ratio for _ in range(num_stages)]
         stage_strides = []
@@ -728,8 +728,9 @@ class RegNet(nn.Module):
             num_classes: Number of classes for new classifier.
             global_pool: Global pooling type.
         """
+        dd = get_device_dtype(self)
         self.num_classes = num_classes
-        self.head.reset(num_classes, pool_type=global_pool)
+        self.head.reset(num_classes, pool_type=global_pool, **dd)
 
     def forward_intermediates(
             self,

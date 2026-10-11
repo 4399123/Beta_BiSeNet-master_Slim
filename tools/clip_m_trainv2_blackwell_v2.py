@@ -54,7 +54,7 @@ printlabels = ['background', 'QPZZ', 'MDBD', 'MNYW', 'WW', 'LMPS', 'BMQQ', 'LMHH
 def parse_args():
     parse = argparse.ArgumentParser()
     parse.add_argument('--config', dest='config', type=str,
-                       default='../configs/fastefficientbisenet_blueface_cpubone_nano_reparam.py', )
+                       default='../configs/fastefficientbisenet_blueface_inceptionnext_atto_sppf.py', )
     parse.add_argument('--finetune-from', type=str, default=None, )
     parse.add_argument("--local_rank", type=int)
     parse.add_argument('--scale-epochs-with-world-size', dest='scale_epochs',
@@ -341,7 +341,7 @@ def train(writer):
         torch.cuda.empty_cache()
         iou_heads, iou_content, f1_heads, f1_content, precision_heads, precision_content, recall_heads, recall_content = eval_model(
             cfg, net.module, printlabels)
-
+        net.train()  # 添加这一行！
         logger.info('\neval results of miou metric:')
         logger.info('\n' + tabulate(iou_content, headers=iou_heads, tablefmt='orgtbl'))
 

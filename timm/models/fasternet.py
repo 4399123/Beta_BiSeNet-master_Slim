@@ -23,7 +23,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.layers import SelectAdaptivePool2d, Linear, DropPath, trunc_normal_, LayerType, calculate_drop_path_rates
+from timm.layers import SelectAdaptivePool2d, Linear, DropPath, trunc_normal_, LayerType, calculate_drop_path_rates, get_device_dtype
 from ._builder import build_model_with_cfg
 from ._features import feature_take_indices
 from ._manipulate import checkpoint_seq
@@ -307,12 +307,15 @@ class FasterNet(nn.Module):
         return self.classifier
 
     def reset_classifier(self, num_classes: int, global_pool: str = 'avg', device=None, dtype=None):
-        dd = {'device': device, 'dtype': dtype}
+        dd = get_device_dtype(self, device=device, dtype=dtype)
         self.num_classes = num_classes
         # cannot meaningfully change pooling of efficient head after creation
         self.global_pool = SelectAdaptivePool2d(pool_type=global_pool)
+        self.global_pool.train(self.training)
         self.flatten = nn.Flatten(1) if global_pool else nn.Identity()  # don't flatten if pooling disabled
+        self.flatten.train(self.training)
         self.classifier = Linear(self.head_hidden_size, num_classes, **dd) if num_classes > 0 else nn.Identity()
+        self.classifier.train(self.training)
 
     def forward_intermediates(
             self,

@@ -16,7 +16,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.layers import DropPath, SelectAdaptivePool2d, Linear, LayerType, trunc_normal_, calculate_drop_path_rates
+from timm.layers import DropPath, SelectAdaptivePool2d, Linear, LayerType, trunc_normal_, calculate_drop_path_rates, get_device_dtype
 from ._builder import build_model_with_cfg
 from ._features import feature_take_indices
 from ._manipulate import checkpoint_seq
@@ -167,16 +167,19 @@ class StarNet(nn.Module):
         return self.head
 
     def reset_classifier(self, num_classes: int, global_pool: Optional[str] = None):
+        dd = get_device_dtype(self)
         self.num_classes = num_classes
         if global_pool is not None:
             # NOTE: cannot meaningfully change pooling of efficient head after creation
             self.global_pool = SelectAdaptivePool2d(pool_type=global_pool)
+            self.global_pool.train(self.training)
             self.flatten = nn.Flatten(1) if global_pool else nn.Identity()  # don't flatten if pooling disabled
+            self.flatten.train(self.training)
         self.head = Linear(
             self.head_hidden_size, num_classes,
-            device=self.head.weight.device if isinstance(self.head, nn.Linear) else None,
-            dtype=self.head.weight.dtype if isinstance(self.head, nn.Linear) else None,
+            **dd,
         ) if num_classes > 0 else nn.Identity()
+        self.head.train(self.training)
 
     def forward_intermediates(
             self,

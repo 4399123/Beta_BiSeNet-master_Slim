@@ -67,7 +67,7 @@ def predict(session, input_name, image):
 def main():
     parser = argparse.ArgumentParser(description="Compare FP32 and INT8 BlueFace ONNX segmentation accuracy")
     parser.add_argument("--fp32-path", default="./onnx/best-smi.onnx")
-    parser.add_argument("--int8-path", default="./onnx/best_int8.onnx")
+    parser.add_argument("--int8-path", default="./onnx/best_int8_fast.onnx")
     parser.add_argument("--dataset-root", default=r'D:\F\ABlueFaceProj\20240618\Seg\BlueFaceDataX2', help="BlueFaceDataX2 root directory")
     parser.add_argument("--annotations", default="val.txt", help="Validation CSV, relative to --dataset-root when not absolute")
     parser.add_argument("--input-size", default="512,512", help="Fixed ONNX input size as H,W")

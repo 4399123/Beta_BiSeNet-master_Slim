@@ -11,6 +11,7 @@ from .crossvit import *
 from .csatv2 import *
 from .cspnet import *
 from .davit import *
+from .deepseek_vit import *
 from .deit import *
 from .densenet import *
 from .dla import *
@@ -19,6 +20,7 @@ from .edgenext import *
 from .efficientformer import *
 from .efficientformer_v2 import *
 from .efficientnet import *
+from .efficientvim import *
 from .efficientvit_mit import *
 from .efficientvit_msra import *
 from .eva import *
@@ -27,18 +29,21 @@ from .fastvit import *
 from .focalnet import *
 from .gcvit import *
 from .gemma4_vit import *
+from .qwen3_vit import *
 from .ghostnet import *
 from .hardcorenas import *
 from .hgnet import *
 from .hiera import *
 from .hieradet_sam2 import *
 from .hrnet import *
+from .iformer import *
 from .inception_next import *
 from .inception_resnet_v2 import *
 from .inception_v3 import *
 from .inception_v4 import *
 from .lcnetv2 import *
 from .levit import *
+from .lowformer import *
 from .maxxvit import *
 from .mambaout import *
 from .metaformer import *

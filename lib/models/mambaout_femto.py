@@ -1,119 +1,43 @@
 #!/usr/bin/python
 # -*- encoding: utf-8 -*-
 
+import os
 import torch
 import torch.nn as nn
 import timm
-import os
-from typing import Any, Callable, Dict, Optional, Union
-import logging
-try:
-    import safetensors.torch
-    _has_safetensors = True
-except ImportError:
-    _has_safetensors = False
 
-_logger = logging.getLogger(__name__)
-
-def clean_state_dict(state_dict: Dict[str, Any]) -> Dict[str, Any]:
-    # 'clean' checkpoint by removing .module prefix from state dict if it exists from parallel training
-    cleaned_state_dict = {}
-    for k, v in state_dict.items():
-        name = k[7:] if k.startswith('module.') else k
-        cleaned_state_dict[name] = v
-    return cleaned_state_dict
-
-
-def load_state_dict(
-        checkpoint_path: str,
-        use_ema: bool = True,
-        device: Union[str, torch.device] = 'cpu',
-) -> Dict[str, Any]:
-    if checkpoint_path and os.path.isfile(checkpoint_path):
-        # Check if safetensors or not and load weights accordingly
-        if str(checkpoint_path).endswith(".safetensors"):
-            assert _has_safetensors, "`pip install safetensors` to use .safetensors"
-            checkpoint = safetensors.torch.load_file(checkpoint_path, device=device)
-        else:
-            checkpoint = torch.load(checkpoint_path, map_location=device)
-
-        state_dict_key = ''
-        if isinstance(checkpoint, dict):
-            if use_ema and checkpoint.get('state_dict_ema', None) is not None:
-                state_dict_key = 'state_dict_ema'
-            elif use_ema and checkpoint.get('model_ema', None) is not None:
-                state_dict_key = 'model_ema'
-            elif 'state_dict' in checkpoint:
-                state_dict_key = 'state_dict'
-            elif 'model' in checkpoint:
-                state_dict_key = 'model'
-        state_dict = clean_state_dict(checkpoint[state_dict_key] if state_dict_key else checkpoint)
-        _logger.info("Loaded {} from checkpoint '{}'".format(state_dict_key, checkpoint_path))
-        return state_dict
-    else:
-        _logger.error("No checkpoint found at '{}'".format(checkpoint_path))
-        raise FileNotFoundError()
-def remap_state_dict(
-        state_dict: Dict[str, Any],
-        model: torch.nn.Module,
-        allow_reshape: bool = True
-):
-    """ remap checkpoint by iterating over state dicts in order (ignoring original keys).
-    This assumes models (and originating state dict) were created with params registered in same order.
-    """
-    out_dict = {}
-    for (ka, va), (kb, vb) in zip(model.state_dict().items(), state_dict.items()):
-        assert va.numel() == vb.numel(), f'Tensor size mismatch {ka}: {va.shape} vs {kb}: {vb.shape}. Remap failed.'
-        if va.shape != vb.shape:
-            if allow_reshape:
-                vb = vb.reshape(va.shape)
-            else:
-                assert False,  f'Tensor shape mismatch {ka}: {va.shape} vs {kb}: {vb.shape}. Remap failed.'
-        out_dict[ka] = vb
-    return out_dict
-
-def load_checkpoint(
-        model: torch.nn.Module,
-        checkpoint_path: str,
-        use_ema: bool = True,
-        device: Union[str, torch.device] = 'cpu',
-        strict: bool = False,
-        remap: bool = True,
-        filter_fn: Optional[Callable] = None,
-):
-    if os.path.splitext(checkpoint_path)[-1].lower() in ('.npz', '.npy'):
-        # numpy checkpoint, try to load via model specific load_pretrained fn
-        if hasattr(model, 'load_pretrained'):
-            model.load_pretrained(checkpoint_path)
-        else:
-            raise NotImplementedError('Model cannot load numpy checkpoint')
-        return
-
-    state_dict = load_state_dict(checkpoint_path, use_ema, device=device)
-    if remap:
-        state_dict = remap_state_dict(state_dict, model)
-    elif filter_fn:
-        state_dict = filter_fn(state_dict, model)
-    incompatible_keys = model.load_state_dict(state_dict, strict=strict)
-    return incompatible_keys
 
 class MambaOut_Femto(nn.Module):
     def __init__(self):
         super(MambaOut_Femto, self).__init__()
-        self.out_indices = [1, 2,3]
-        self.selected_feature_extractor = timm.create_model('mambaout_femto.in1k', features_only=True, out_indices=self.out_indices,pretrained=False)
-        try:
-            load_checkpoint(self.selected_feature_extractor, '../lib/premodels/mambaout_femto.pth')
-        except:
-            load_checkpoint(self.selected_feature_extractor, '../premodels/mambaout_femto.pth')
+        self.out_indices = [1, 2, 3]  # 抽取 1/8, 1/16, 1/32 特征
 
+        ckpt_path = '../lib/premodels/mambaout_femto.pth'
+        if not os.path.isfile(ckpt_path):
+            ckpt_path = '../premodels/mambaout_femto.pth'
+
+        # 1. 创建完整模型并载入预训练权重（保证官方权重的 key 100% 精确匹配）
+        self.model = timm.create_model(
+            'mambaout_femto.in1k',
+            pretrained=False,
+            checkpoint_path=ckpt_path if os.path.isfile(ckpt_path) else None
+        )
+
+        # 2. 载入权重后，立即剪枝：剔除多余 stage 并移除分类头 fc
+        self.model.prune_intermediate_layers(indices=self.out_indices, prune_head=True)
+
+        # 3. （可选进阶）因为分割完全不需要 head 中的 pre_logits / norm 等辅助层，可以直接置空：
+        self.model.head = nn.Identity()
 
     def forward(self, x):
-        x=self.selected_feature_extractor(x)
-        feat8 =x[0] # 1/8
-        feat16 = x[1] # 1/16
-        feat32 = x[2] # 1/32
-        return feat8.permute((0, 3, 1, 2)).contiguous(), feat16.permute((0, 3, 1, 2)).contiguous(), feat32.permute((0, 3, 1, 2)).contiguous()
+        # 通过 forward_intermediates 提取特征
+        feats = self.model.forward_intermediates(
+            x,
+            indices=self.out_indices,
+            output_fmt='NCHW',
+            intermediates_only=True
+        )
+        return feats[0], feats[1], feats[2]
 
     def get_params(self):
         wd_params, nowd_params = [], []
