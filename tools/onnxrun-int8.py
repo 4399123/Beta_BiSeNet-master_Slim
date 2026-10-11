@@ -6,7 +6,7 @@ from PIL import Image
 import cv2
 
 #路径
-onnx_path=r'./onnx/best_int8.onnx'
+onnx_path=r'./onnx/best_int8_fast.onnx'
 pic_path=r'./onnx/11.jpg'
 w,h=512,512
 

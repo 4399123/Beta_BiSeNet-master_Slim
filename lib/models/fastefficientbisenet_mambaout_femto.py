@@ -21,94 +21,26 @@ class ConvBNReLU(nn.Module):
         return self.relu(self.bn(self.conv(x)))
 
 
-class TRT_FixedAvgPool2d(nn.Module):
+class SPPF(nn.Module):
     """
-    TensorRT 友好的静态池化层。
-    初始化时根据 (input_size, output_size) 计算固定的 kernel/stride。
+    Spatial Pyramid Pooling - Fast（YOLOv5 风格）。
+    使用 k=5 的 MaxPool 串联 3 次，等效提供 5/9/13 的多尺度感受野；
+    stride=1 且使用 same padding，因此特征图尺寸保持不变，适合 TensorRT 部署。
     """
 
-    def __init__(self, input_size, output_size):
+    def __init__(self, in_channels, out_channels, k=5):
         super().__init__()
-        self.output_size = output_size
-        self.input_size = input_size
-
-        # 1. Global Average Pooling (1x1)
-        if output_size == (1, 1) or output_size == 1:
-            self.is_global = True
-            self.pool = None
-        else:
-            self.is_global = False
-            # 2. 普通尺寸，手动计算 Kernel 和 Stride
-            if isinstance(output_size, int):
-                output_size = (output_size, output_size)
-            if isinstance(input_size, int):
-                input_size = (input_size, input_size)
-
-            # 计算逻辑：Stride = Input // Output
-            stride_h = input_size[0] // output_size[0]
-            stride_w = input_size[1] // output_size[1]
-
-            # Kernel = Input - (Output - 1) * Stride
-            kernel_h = input_size[0] - (output_size[0] - 1) * stride_h
-            kernel_w = input_size[1] - (output_size[1] - 1) * stride_w
-
-            self.pool = nn.AvgPool2d(
-                kernel_size=(kernel_h, kernel_w),
-                stride=(stride_h, stride_w),
-                padding=0
-            )
+        hidden_dim = in_channels // 2
+        self.cv1 = ConvBNReLU(in_channels, hidden_dim, ks=1, padding=0)
+        self.pool = nn.MaxPool2d(kernel_size=k, stride=1, padding=k // 2)
+        self.cv2 = ConvBNReLU(hidden_dim * 4, out_channels, ks=1, padding=0)
 
     def forward(self, x):
-        if self.is_global:
-            return x.mean(dim=(2, 3), keepdim=True)
-        else:
-            return self.pool(x)
-
-
-class SPPM_TRT(nn.Module):
-    """
-    针对 TensorRT 优化的 SPPM 模块
-    包含: FixedAvgPool -> Upsample -> Concat -> ConvOut(1x1)
-    """
-
-    def __init__(self, in_channels, out_channels, k_sizes=[1, 5, 9, 13], input_feat_shape=(20, 20)):
-        super().__init__()
-        self.stages = nn.ModuleList([
-            self._make_stage(in_channels, out_channels, size, input_feat_shape)
-            for size in k_sizes
-        ])
-
-        # 计算拼接后的通道数：原始通道 + 4个分支的通道
-        hidden_dim = in_channels // 4
-        concat_channels = in_channels + len(k_sizes) * hidden_dim
-
-        # 融合卷积：将 256 通道降维回 128 通道
-        self.conv_out = ConvBNReLU(concat_channels, out_channels, ks=1, padding=0)
-
-    def _make_stage(self, in_channels, out_channels, size, input_feat_shape):
-        hidden_dim = in_channels // 4
-        return nn.Sequential(
-            TRT_FixedAvgPool2d(input_size=input_feat_shape, output_size=size),
-            nn.Conv2d(in_channels, hidden_dim, kernel_size=1, bias=False),
-            nn.BatchNorm2d(hidden_dim),
-            nn.ReLU(inplace=True)
-        )
-
-    def forward(self, x):
-        input_size = x.shape[2:]
-        priors = [x]
-
-        for stage in self.stages:
-            feat = stage(x)
-            # 上采样回 input_size (feature map size)
-            feat = F.interpolate(feat, size=input_size, mode='bilinear', align_corners=False)
-            priors.append(feat)
-
-        # 拼接
-        bottle = torch.cat(priors, dim=1)
-        # 融合降维
-        out = self.conv_out(bottle)
-        return out
+        x = self.cv1(x)
+        y1 = self.pool(x)
+        y2 = self.pool(y1)
+        y3 = self.pool(y2)
+        return self.cv2(torch.cat([x, y1, y2, y3], dim=1))
 
 
 class UAFM(nn.Module):
@@ -164,7 +96,7 @@ class SegmentationHead(nn.Module):
 class FastEfficientBiSeNet_MambaOut_Femto(nn.Module):
     def __init__(self, n_classes, aux_mode='train', use_fp16=False, img_size=(512, 512)):
         """
-        img_size: 用于计算 SPPM 静态池化参数，务必与实际输入一致。
+        img_size 保留以兼容现有配置；SPPF 不依赖固定输入特征图尺寸。
         """
         super(FastEfficientBiSeNet_MambaOut_Femto, self).__init__()
         self.use_fp16 = use_fp16
@@ -184,13 +116,8 @@ class FastEfficientBiSeNet_MambaOut_Femto(nn.Module):
         self.proj_c4 = ConvBNReLU(self.c4_chan, 128, ks=1, padding=0)
         self.proj_c3 = ConvBNReLU(self.c3_chan, 128, ks=1, padding=0)
 
-        # 2. SPPM (静态化)
-        # 计算 SPPM 输入特征图尺寸 (Backbone Stride=32)
-        sppm_feat_h = img_size[0] // 32
-        sppm_feat_w = img_size[1] // 32
-
-        self.sppm = SPPM_TRT(in_channels=128, out_channels=128,
-                             input_feat_shape=(sppm_feat_h, sppm_feat_w))
+        # 2. SPPF：尺寸不变，无需依赖 img_size 计算静态池化参数
+        self.sppf = SPPF(in_channels=128, out_channels=128, k=5)
 
         # 3. 融合模块
         self.fuse_context = UAFM(high_chan=128, low_chan=128, out_chan=128)
@@ -217,11 +144,11 @@ class FastEfficientBiSeNet_MambaOut_Femto(nn.Module):
             c4 = self.proj_c4(feat16)
             c3 = self.proj_c3(feat8)
 
-            # SPPM
-            c5_sppm = self.sppm(c5)
+            # SPPF
+            c5_sppf = self.sppf(c5)
 
             # Context Fusion
-            feat_context = self.fuse_context(c5_sppm, c4)
+            feat_context = self.fuse_context(c5_sppf, c4)
 
             # Spatial Fusion
             feat_final = self.fuse_final(feat_context, c3)
@@ -234,7 +161,7 @@ class FastEfficientBiSeNet_MambaOut_Femto(nn.Module):
             if self.aux_mode == 'train':
                 # 同理，信任 scale_factor 16 和 32
                 aux_out1 = self.aux_head_c4(c4)
-                aux_out2 = self.aux_head_c5(c5_sppm)
+                aux_out2 = self.aux_head_c5(c5_sppf)
                 return logits, aux_out1, aux_out2
 
             elif self.aux_mode == 'eval':

@@ -45,9 +45,9 @@ def rand_bbox(img_shape, lam, margin=0., count=None):
     cy = np.random.randint(0 + margin_y, img_h - margin_y, size=count)
     cx = np.random.randint(0 + margin_x, img_w - margin_x, size=count)
     yl = np.clip(cy - cut_h // 2, 0, img_h)
-    yh = np.clip(cy + cut_h // 2, 0, img_h)
+    yh = np.clip(cy + (cut_h + 1) // 2, 0, img_h)
     xl = np.clip(cx - cut_w // 2, 0, img_w)
-    xh = np.clip(cx + cut_w // 2, 0, img_w)
+    xh = np.clip(cx + (cut_w + 1) // 2, 0, img_w)
     return yl, yh, xl, xh
 
 
@@ -67,8 +67,8 @@ def rand_bbox_minmax(img_shape, minmax, count=None):
     img_h, img_w = img_shape[-2:]
     cut_h = np.random.randint(int(img_h * minmax[0]), int(img_h * minmax[1]), size=count)
     cut_w = np.random.randint(int(img_w * minmax[0]), int(img_w * minmax[1]), size=count)
-    yl = np.random.randint(0, img_h - cut_h, size=count)
-    xl = np.random.randint(0, img_w - cut_w, size=count)
+    yl = np.random.randint(0, img_h - cut_h + 1, size=count)
+    xl = np.random.randint(0, img_w - cut_w + 1, size=count)
     yu = yl + cut_h
     xu = xl + cut_w
     return yl, yu, xl, xu
@@ -256,7 +256,7 @@ class FastCollateMixup(Mixup):
                         torch.round(mixed, out=mixed)
             output[i] += torch.from_numpy(mixed.astype(np.uint8)) if is_np else mixed.byte()
         if half:
-            lam_batch = np.concatenate((lam_batch, np.ones(num_elem)))
+            lam_batch = np.concatenate((lam_batch, np.ones(num_elem, dtype=lam_batch.dtype)))
         return torch.tensor(lam_batch).unsqueeze(1)
 
     def _mix_pair_collate(self, output, batch):
@@ -346,4 +346,3 @@ class FastCollateMixup(Mixup):
         target = mixup_target(target, self.num_classes, lam, self.label_smoothing)
         target = target[:batch_size]
         return output, target
-

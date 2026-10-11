@@ -17,6 +17,7 @@ from lib.data.catdog_dataset import CatDogDataset
 from lib.data.coco80_dataset import COCO80Dataset
 from lib.data.crack_dataset import CrackDataset
 from lib.data.blueface_dataset import BlueFaceDataset
+from lib.data.vit_dataset import VitDataset
 
 
 def worker_init_fn(worker_id):

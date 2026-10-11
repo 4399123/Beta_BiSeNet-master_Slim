@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
-from timm.layers import create_classifier
+from timm.layers import create_classifier, get_device_dtype
 from ._builder import build_model_with_cfg
 from ._registry import register_model, generate_default_cfgs
 
@@ -447,10 +447,14 @@ class DLA(nn.Module):
         return self.fc
 
     def reset_classifier(self, num_classes: int, global_pool: str = 'avg'):
+        dd = get_device_dtype(self)
         self.num_classes = num_classes
         self.global_pool, self.fc = create_classifier(
-            self.num_features, self.num_classes, pool_type=global_pool, use_conv=True)
+            self.num_features, self.num_classes, pool_type=global_pool, use_conv=True, **dd)
+        self.global_pool.train(self.training)
+        self.fc.train(self.training)
         self.flatten = nn.Flatten(1) if global_pool else nn.Identity()
+        self.flatten.train(self.training)
 
     def forward_features(self, x):
         x = self.base_layer(x)

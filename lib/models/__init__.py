@@ -47,6 +47,7 @@ from .bisenetv1_mambaout_tiny import BiSeNetV1_MambaOut_Tiny
 
 #segformer
 from .segformer_b0 import SegFormer_B0
+from .segformer_qwen3_5_0_8b import SegFormer_Qwen3_5_0_8b
 
 #topformer
 from .topformer_efficientnet_lite1 import TopFormer_Lite1
@@ -190,4 +191,5 @@ model_factory = {
     'fastefficientbisenet_repvit_m0_9_reparam': FastEfficientBiSeNet_RepVit_M0_9_Reparam,
     'fastefficientbisenet_cpubone_nano_reparam': FastEfficientBiSeNet_CPUBone_Nano_Reparam,
     'fastefficientbisenet_inceptionnext_atto_sppf': FastEfficientBiSeNet_InceptionNeXt_Atto_SPPF,
+    'segformer_qwen3_5_0_8b': SegFormer_Qwen3_5_0_8b,
 }

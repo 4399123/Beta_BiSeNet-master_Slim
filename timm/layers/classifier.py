@@ -13,6 +13,7 @@ from torch.nn import functional as F
 from .adaptive_avgmax_pool import SelectAdaptivePool2d
 from .create_act import get_act_layer
 from .create_norm import get_norm_layer
+from .helpers import get_device_dtype
 
 
 def _create_pool(
@@ -114,8 +115,14 @@ class ClassifierHead(nn.Module):
         self.fc = fc
         self.flatten = nn.Flatten(1) if use_conv and pool_type else nn.Identity()
 
-    def reset(self, num_classes: int, pool_type: Optional[str] = None):
-        # FIXME get current device/dtype for reset?
+    def reset(
+            self,
+            num_classes: int,
+            pool_type: Optional[str] = None,
+            device=None,
+            dtype=None,
+    ):
+        dd = get_device_dtype(self, device=device, dtype=dtype)
         if pool_type is not None and pool_type != self.global_pool.pool_type:
             self.global_pool, self.fc = create_classifier(
                 self.in_features,
@@ -123,15 +130,21 @@ class ClassifierHead(nn.Module):
                 pool_type=pool_type,
                 use_conv=self.use_conv,
                 input_fmt=self.input_fmt,
+                **dd,
             )
+            self.global_pool.train(self.training)
+            self.fc.train(self.training)
             self.flatten = nn.Flatten(1) if self.use_conv and pool_type else nn.Identity()
+            self.flatten.train(self.training)
         else:
             num_pooled_features = self.in_features * self.global_pool.feat_mult()
             self.fc = _create_fc(
                 num_pooled_features,
                 num_classes,
                 use_conv=self.use_conv,
+                **dd,
             )
+            self.fc.train(self.training)
 
     def forward(self, x, pre_logits: bool = False):
         x = self.global_pool(x)
@@ -191,22 +204,32 @@ class NormMlpClassifierHead(nn.Module):
         self.drop = nn.Dropout(drop_rate)
         self.fc = linear_layer(self.num_features, num_classes, **dd) if num_classes > 0 else nn.Identity()
 
-    def reset(self, num_classes: int, pool_type: Optional[str] = None):
-        # FIXME handle device/dtype on reset
+    def reset(
+            self,
+            num_classes: int,
+            pool_type: Optional[str] = None,
+            device=None,
+            dtype=None,
+    ):
+        dd = get_device_dtype(self, device=device, dtype=dtype)
         if pool_type is not None:
             self.global_pool = SelectAdaptivePool2d(pool_type=pool_type)
+            self.global_pool.train(self.training)
             self.flatten = nn.Flatten(1) if pool_type else nn.Identity()
+            self.flatten.train(self.training)
         self.use_conv = self.global_pool.is_identity()
         linear_layer = partial(nn.Conv2d, kernel_size=1) if self.use_conv else nn.Linear
         if self.hidden_size:
             if ((isinstance(self.pre_logits.fc, nn.Conv2d) and not self.use_conv) or
                     (isinstance(self.pre_logits.fc, nn.Linear) and self.use_conv)):
                 with torch.no_grad():
-                    new_fc = linear_layer(self.in_features, self.hidden_size)
+                    new_fc = linear_layer(self.in_features, self.hidden_size, **dd)
                     new_fc.weight.copy_(self.pre_logits.fc.weight.reshape(new_fc.weight.shape))
                     new_fc.bias.copy_(self.pre_logits.fc.bias)
                     self.pre_logits.fc = new_fc
-        self.fc = linear_layer(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
+                    self.pre_logits.fc.train(self.pre_logits.training)
+        self.fc = linear_layer(self.num_features, num_classes, **dd) if num_classes > 0 else nn.Identity()
+        self.fc.train(self.training)
 
     def forward(self, x, pre_logits: bool = False):
         x = self.global_pool(x)
@@ -270,14 +293,24 @@ class ClNormMlpClassifierHead(nn.Module):
         self.drop = nn.Dropout(drop_rate)
         self.fc = nn.Linear(self.num_features, num_classes, **dd) if num_classes > 0 else nn.Identity()
 
-    def reset(self, num_classes: int, pool_type: Optional[str] = None, reset_other: bool = False):
-        # FIXME extract dd on reset
+    def reset(
+            self,
+            num_classes: int,
+            pool_type: Optional[str] = None,
+            reset_other: bool = False,
+            device=None,
+            dtype=None,
+    ):
+        dd = get_device_dtype(self, device=device, dtype=dtype)
         if pool_type is not None:
             self.pool_type = pool_type
         if reset_other:
             self.pre_logits = nn.Identity()
+            self.pre_logits.train(self.training)
             self.norm = nn.Identity()
-        self.fc = nn.Linear(self.num_features, num_classes) if num_classes > 0 else nn.Identity()
+            self.norm.train(self.training)
+        self.fc = nn.Linear(self.num_features, num_classes, **dd) if num_classes > 0 else nn.Identity()
+        self.fc.train(self.training)
 
     def _global_pool(self, x):
         if self.pool_type:

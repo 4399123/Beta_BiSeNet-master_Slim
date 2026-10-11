@@ -15,9 +15,9 @@ torch.set_grad_enabled(False)
 
 parse = argparse.ArgumentParser()
 parse.add_argument('--config', dest='config', type=str,
-                   default='../configs/fastefficientbisenet_blueface_cpubone_nano_reparam.py'),
+                   default='../configs/fastefficientbisenet_blueface_inceptionnext_atto_sppf.py'),
 parse.add_argument('--weight-path', dest='weight_pth', type=str,
-                   default='../pt/fastefficientbisenet_cpubone_nano.pt')
+                   default='../pt/fastefficientbisenet_inceptionnext_atto_sppf.pt')
 parse.add_argument('--outpath', dest='out_pth', type=str,
                    default='./onnx/best.onnx')
 parse.add_argument('--ousmitpath', dest='outsmi_pth', type=str,
