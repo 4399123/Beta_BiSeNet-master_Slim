@@ -45,6 +45,7 @@ from .bisenetv1_efficientnetv2_b3 import BiSeNetV1_EfficientNetV2_B3
 from .bisenetv1_mambaout_tiny import BiSeNetV1_MambaOut_Tiny
 
 
+
 #segformer
 from .segformer_b0 import SegFormer_B0
 from .segformer_qwen3_5_0_8b import SegFormer_Qwen3_5_0_8b
@@ -96,6 +97,7 @@ from .fastefficientbisenet_fasternet_t0_reparam  import FastEfficientBiSeNet_Fas
 from .fastefficientbisenet_repvit_m0_9_reparam   import FastEfficientBiSeNet_RepVit_M0_9_Reparam
 from .fastefficientbisenet_cpubone_nano_reparam   import FastEfficientBiSeNet_CPUBone_Nano_Reparam
 from .fastefficientbisenet_inceptionnext_atto_sppf  import FastEfficientBiSeNet_InceptionNeXt_Atto_SPPF
+from .fastefficientbisenet_mobilenetv5  import FastEfficientBiSeNet_MobileNetV5
 
 #fastefficientformerseg
 from .fastefficientformerseg_efficientnetv2_b3 import FastEfficientFormerSeg_EfficientNetV2_B3
@@ -192,4 +194,5 @@ model_factory = {
     'fastefficientbisenet_cpubone_nano_reparam': FastEfficientBiSeNet_CPUBone_Nano_Reparam,
     'fastefficientbisenet_inceptionnext_atto_sppf': FastEfficientBiSeNet_InceptionNeXt_Atto_SPPF,
     'segformer_qwen3_5_0_8b': SegFormer_Qwen3_5_0_8b,
+    'fastefficientbisenet_mobilenetv5': FastEfficientBiSeNet_MobileNetV5,
 }

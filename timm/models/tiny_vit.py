@@ -1,7 +1,7 @@
 """ TinyViT
 
-Paper: `TinyViT: Fast Pretraining Distillation for Small Vision Transformers`
-    - https://arxiv.org/abs/2207.10666
+Papers:
+* `TinyViT: Fast Pretraining Distillation for Small Vision Transformers` - https://arxiv.org/abs/2207.10666
 
 Adapted from official impl at https://github.com/microsoft/Cream/tree/main/TinyViT
 """
@@ -257,8 +257,12 @@ class Attention(torch.nn.Module):
     @torch.no_grad()
     def train(self, mode=True):
         super().train(mode)
-        if mode and self.attention_bias_cache:
+        if self.attention_bias_cache:
             self.attention_bias_cache = {}  # clear ab cache
+
+    def _apply(self, fn, *args, **kwargs):
+        self.attention_bias_cache = {}
+        return super()._apply(fn, *args, **kwargs)
 
     def get_attention_biases(self, device: torch.device) -> torch.Tensor:
         if torch.jit.is_tracing() or self.training:
@@ -518,6 +522,7 @@ class TinyVit(nn.Module):
             window_sizes: Tuple[int, ...] = (7, 7, 14, 7),
             mlp_ratio: float = 4.,
             drop_rate: float = 0.,
+            proj_drop_rate: float = 0.,
             drop_path_rate: float = 0.1,
             use_checkpoint: bool = False,
             mbconv_expand_ratio: float = 4.0,
@@ -571,7 +576,7 @@ class TinyVit(nn.Module):
                     num_heads=num_heads[stage_idx],
                     window_size=window_sizes[stage_idx],
                     mlp_ratio=self.mlp_ratio,
-                    drop=drop_rate,
+                    drop=proj_drop_rate,
                     local_conv_size=local_conv_size,
                     drop_path=drop_path_rate,
                     downsample=PatchMerging,
@@ -592,6 +597,7 @@ class TinyVit(nn.Module):
             num_classes,
             pool_type=global_pool,
             norm_layer=norm_layer_cf,
+            drop_rate=drop_rate,
             **dd,
         )
 

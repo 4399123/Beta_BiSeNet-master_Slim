@@ -1,6 +1,7 @@
 """ Vision OutLOoker (VOLO) implementation
 
-Paper: `VOLO: Vision Outlooker for Visual Recognition` - https://arxiv.org/abs/2106.13112
+Papers:
+* `VOLO: Vision Outlooker for Visual Recognition` - https://arxiv.org/abs/2106.13112
 
 Code adapted from official impl at https://github.com/sail-sg/volo, original copyright in comment below
 
@@ -1187,6 +1188,7 @@ class VOLO(nn.Module):
             out = x[:, 0]
         else:
             out = x
+        out = self.head_drop(out)
         x = self.head_drop(x)
         if pre_logits:
             return out

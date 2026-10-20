@@ -1,5 +1,9 @@
 """
 RDNet
+
+Papers:
+* `DenseNets Reloaded: Paradigm Shift Beyond ResNets and ViTs` - https://arxiv.org/abs/2403.19588
+
 Copyright (c) 2024-present NAVER Cloud Corp.
 Apache-2.0
 """
@@ -9,13 +13,14 @@ from typing import List, Optional, Tuple, Union, Callable, Type
 
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
 
 from timm.data import IMAGENET_DEFAULT_MEAN, IMAGENET_DEFAULT_STD
 from timm.layers import DropPath, calculate_drop_path_rates, NormMlpClassifierHead, ClassifierHead, EffectiveSEModule, \
     make_divisible, get_act_layer, get_norm_layer, get_device_dtype
 from ._builder import build_model_with_cfg
 from ._features import feature_take_indices
-from ._manipulate import named_apply
+from ._manipulate import named_apply, checkpoint, checkpoint_seq
 from ._registry import register_model, generate_default_cfgs
 
 __all__ = ["RDNet"]
@@ -130,6 +135,8 @@ class DenseBlock(nn.Module):
             x = x.mul(self.gamma.reshape(1, -1, 1, 1))
 
         x = self.drop_path(x)
+        if self.drop_rate > 0:
+            x = F.dropout(x, p=self.drop_rate, training=self.training)
         return x
 
 
@@ -190,6 +197,7 @@ class RDNet(nn.Module):
             norm_layer: str = "layernorm2d",
             norm_eps: Optional[float] = None,
             drop_rate: float = 0.0,  # timm option [--drop: dropout ratio]
+            proj_drop_rate: float = 0.0,
             drop_path_rate: float = 0.0,  # timm option [--drop-path: drop-path ratio]
             device=None,
             dtype=None,
@@ -215,6 +223,7 @@ class RDNet(nn.Module):
             norm_layer: Normalization layer type.
             norm_eps: Small value to avoid division by zero in normalization.
             drop_rate: Head pre-classifier dropout rate.
+            proj_drop_rate: Dropout rate after each dense block.
             drop_path_rate: Stochastic depth drop rate.
         """
         super().__init__()
@@ -228,6 +237,7 @@ class RDNet(nn.Module):
         self.num_classes = num_classes
         self.in_chans = in_chans
         self.drop_rate = drop_rate
+        self.grad_checkpointing = False
 
         # stem
         assert stem_type in ('patch', 'overlap', 'overlap_tiered')
@@ -280,7 +290,7 @@ class RDNet(nn.Module):
                 num_input_features=num_features,
                 growth_rate=growth_rates[i],
                 bottleneck_width_ratio=bottleneck_width_ratio,
-                drop_rate=drop_rate,
+                drop_rate=proj_drop_rate,
                 drop_path_rates=dp_rates[i],
                 ls_init_value=ls_init_value,
                 block_type=block_type[i],
@@ -338,8 +348,7 @@ class RDNet(nn.Module):
 
     @torch.jit.ignore
     def set_grad_checkpointing(self, enable=True):
-        for s in self.dense_stages:
-            s.grad_checkpointing = enable
+        self.grad_checkpointing = enable
 
     @torch.jit.ignore
     def get_classifier(self) -> nn.Module:
@@ -385,7 +394,10 @@ class RDNet(nn.Module):
         else:
             dense_stages = self.dense_stages[:max_index + 1]
         for feat_idx, stage in enumerate(dense_stages):
-            x = stage(x)
+            if self.grad_checkpointing and not torch.jit.is_scripting():
+                x = checkpoint(stage, x)
+            else:
+                x = stage(x)
             if feat_idx in take_indices:
                 if norm and feat_idx == last_idx:
                     x_inter = self.norm_pre(x)  # applying final norm to last intermediate
@@ -421,7 +433,10 @@ class RDNet(nn.Module):
 
     def forward_features(self, x):
         x = self.stem(x)
-        x = self.dense_stages(x)
+        if self.grad_checkpointing and not torch.jit.is_scripting():
+            x = checkpoint_seq(self.dense_stages, x)
+        else:
+            x = self.dense_stages(x)
         x = self.norm_pre(x)
         return x
 

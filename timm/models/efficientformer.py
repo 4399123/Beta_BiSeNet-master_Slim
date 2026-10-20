@@ -1,5 +1,8 @@
 """ EfficientFormer
 
+Papers:
+    * `EfficientFormer: Vision Transformers at MobileNet Speed` - https://arxiv.org/abs/2206.01191
+
 @article{li2022efficientformer,
   title={EfficientFormer: Vision Transformers at MobileNet Speed},
   author={Li, Yanyu and Yuan, Geng and Wen, Yang and Hu, Eric and Evangelidis, Georgios and Tulyakov,
@@ -90,8 +93,12 @@ class Attention(torch.nn.Module):
     @torch.no_grad()
     def train(self, mode=True):
         super().train(mode)
-        if mode and self.attention_bias_cache:
+        if self.attention_bias_cache:
             self.attention_bias_cache = {}  # clear ab cache
+
+    def _apply(self, fn, *args, **kwargs):
+        self.attention_bias_cache = {}
+        return super()._apply(fn, *args, **kwargs)
 
     def get_attention_biases(self, device: torch.device) -> torch.Tensor:
         if torch.jit.is_tracing() or self.training:
@@ -405,12 +412,14 @@ class EfficientFormer(nn.Module):
             drop_rate: float = 0.,
             proj_drop_rate: float = 0.,
             drop_path_rate: float = 0.,
+            img_size: Optional[Union[int, Tuple[int, int]]] = None,
             device=None,
             dtype=None,
-            **kwargs
     ):
         super().__init__()
         dd = {'device': device, 'dtype': dtype}
+        # img_size is unused, accepted as the builder passes it for fixed_input_size models. The attention
+        # bias resolution is fixed at 7x7 (224x224 input).
         self.num_classes = num_classes
         self.in_chans = in_chans
         self.global_pool = global_pool

@@ -7,11 +7,11 @@ An improved version of the Vision Transformer with:
 4. Support for FlexiViT variable patch size
 5. Support for NaViT fractional/factorized position embedding
 
-Based on ideas from:
-- Original Vision Transformer: https://arxiv.org/abs/2010.11929
-- FlexiViT: https://arxiv.org/abs/2212.08013
-- NaViT: https://arxiv.org/abs/2307.06304
-- NaFlex (SigLip-2): https://arxiv.org/abs/2502.14786
+Based on ideas from (original ViT, FlexiViT, NaViT, and NaFlex from SigLIP-2):
+- `An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale` - https://arxiv.org/abs/2010.11929
+- `FlexiViT: One Model for All Patch Sizes` - https://arxiv.org/abs/2212.08013
+- `Patch n' Pack: NaViT, a Vision Transformer for any Aspect Ratio and Resolution` - https://arxiv.org/abs/2307.06304
+- `SigLIP 2: Multilingual Vision-Language Encoders with Improved Semantic Understanding, Localization, and Dense Features` - https://arxiv.org/abs/2502.14786
 
 Hacked together by / Copyright 2025, Ross Wightman, Hugging Face
 """
@@ -107,9 +107,9 @@ class NaFlexVitCfg:
     rope_grid_offset: float = 0.  # Grid offset for non-pixel ROPE mode
     rope_grid_indexing: str = 'ij'  # Grid indexing mode for ROPE ('ij' or 'xy')
     rope_rotate_half: bool = False  # Use rotate_half layout for ROPE (DINOv3 and 'mrope' use True)
-    rope_shift_coords: Optional[float] = None  # DINOv3 train-time coordinate shift in [-s, s]
-    rope_jitter_coords: Optional[float] = None  # DINOv3 train-time per-axis scale in [1/J, J]
-    rope_rescale_coords: Optional[float] = None  # DINOv3 train-time shared scale in [1/R, R]
+    rope_shift_coords: Optional[float] = None  # Train-time coordinate shift in [-s, s], in the rope grid's units
+    rope_jitter_coords: Optional[float] = None  # Train-time per-axis scale in [1/J, J]
+    rope_rescale_coords: Optional[float] = None  # Train-time shared scale in [1/R, R]
     rope_mrope_section: Optional[Tuple[int, int, int]] = None  # (T,H,W) channel split for rope_type='mrope'
 
     # Image processing
@@ -259,7 +259,7 @@ class NaFlexRopeIterator:
         self._embeddings_per_size = {}
         for grid_size in unique_sizes:
             # get_embed returns all depths at once for mixed mode
-            rope_embed = rope_module.get_embed(shape=grid_size)
+            rope_embed = rope_module.get_embed(shape=grid_size, dtype=self.dtype)
             self._embeddings_per_size[grid_size] = rope_embed
 
     def __iter__(self):
@@ -1185,6 +1185,10 @@ class NaFlexVit(nn.Module):
         # Initialize config
         cfg = cfg or NaFlexVitCfg()
         if kwargs:
+            unknown_kwargs = set(kwargs) - set(cfg.__dataclass_fields__.keys())
+            if unknown_kwargs:
+                raise TypeError(
+                    f'{type(self).__name__}.__init__() got unexpected keyword argument(s): {sorted(unknown_kwargs)}')
             cfg = _overlay_kwargs(cfg, **kwargs)
 
         # Validate configuration
@@ -1201,6 +1205,7 @@ class NaFlexVit(nn.Module):
         mlp_layer = cfg.mlp_layer or Mlp   # TODO: Support configurable mlp_layer via string lookup
 
         # Store instance variables
+        self._traits = dict(fixed_input_size=False, first_conv='embeds.proj')
         self.num_classes = num_classes
         self.in_chans = in_chans
         self.global_pool = cfg.global_pool
@@ -1246,7 +1251,14 @@ class NaFlexVit(nn.Module):
             from timm.layers.pos_embed_sincos import (
                 RotaryEmbeddingCat, RotaryEmbeddingDinoV3, RotaryEmbeddingMixed, RotaryEmbeddingMRope,
             )
+            rope_aug_kwargs = dict(
+                shift_coords=cfg.rope_shift_coords,
+                jitter_coords=cfg.rope_jitter_coords,
+                rescale_coords=cfg.rope_rescale_coords,
+            )
             if cfg.rope_type == 'mixed':
+                if cfg.rope_rotate_half:
+                    raise ValueError("Mixed RoPE requires rope_rotate_half=False")
                 self.rope = RotaryEmbeddingMixed(
                     cfg.embed_dim,
                     depth=cfg.depth,
@@ -1254,6 +1266,7 @@ class NaFlexVit(nn.Module):
                     temperature=cfg.rope_temperature,
                     feat_shape=None,  # Dynamic shapes for NaFlex
                     grid_indexing=cfg.rope_grid_indexing,
+                    **rope_aug_kwargs,
                     **dd,
                 )
                 self.rope_is_mixed = True
@@ -1264,8 +1277,10 @@ class NaFlexVit(nn.Module):
                     in_pixels=False,
                     feat_shape=None,  # Dynamic shapes for NaFlex
                     ref_feat_shape=cfg.rope_ref_feat_shape,
+                    rotate_half=cfg.rope_rotate_half,
                     grid_offset=cfg.rope_grid_offset,
                     grid_indexing=cfg.rope_grid_indexing,
+                    **rope_aug_kwargs,
                     **dd,
                 )
                 self.rope_is_mixed = False
@@ -1277,9 +1292,7 @@ class NaFlexVit(nn.Module):
                     grid_offset=cfg.rope_grid_offset,
                     grid_indexing=cfg.rope_grid_indexing,
                     rotate_half=cfg.rope_rotate_half,
-                    shift_coords=cfg.rope_shift_coords,
-                    jitter_coords=cfg.rope_jitter_coords,
-                    rescale_coords=cfg.rope_rescale_coords,
+                    **rope_aug_kwargs,
                     **dd,
                 )
                 self.rope_is_mixed = False
@@ -1290,6 +1303,7 @@ class NaFlexVit(nn.Module):
                     mrope_section=cfg.rope_mrope_section,
                     temperature=cfg.rope_temperature,
                     grid_indexing=cfg.rope_grid_indexing,
+                    **rope_aug_kwargs,
                     **dd,
                 )
                 self.rope_is_mixed = False
@@ -1527,8 +1541,8 @@ class NaFlexVit(nn.Module):
                 unique_sizes,
                 B,
                 seq_len,
+                x.device,
                 x.dtype,
-                x.device
             )
 
         # Axial mode: [batch_size, seq_len, dim*2]
@@ -1536,7 +1550,7 @@ class NaFlexVit(nn.Module):
 
         if hasattr(self.rope, 'get_batch_embeds'):
             # Batch mode - generate unique embeds from one grid and then assign
-            unique_embeds = self.rope.get_batch_embeds(unique_sizes)
+            unique_embeds = self.rope.get_batch_embeds(unique_sizes, dtype=x.dtype)
             for grid_size, embed, batch_indices in zip(unique_sizes, unique_embeds, size_to_indices.values()):
                 h, w = grid_size
                 actual_len = h * w
@@ -1546,7 +1560,7 @@ class NaFlexVit(nn.Module):
         else:
             # Generate each unique size separately and assign
             for grid_size, bi in size_to_indices.items():
-                rope_embed = self.rope.get_embed(shape=grid_size)
+                rope_embed = self.rope.get_embed(shape=grid_size, dtype=x.dtype)
                 h, w = grid_size
                 actual_len = h * w
                 rope_embeds[bi, :actual_len] = rope_embed[:actual_len]
@@ -2194,6 +2208,7 @@ def _create_naflexvit_from_eva(
     """
     # Handle EVA's unique parameters & block args
     kwargs.pop('no_embed_class', None)  # EVA specific, not used in NaFlexVit (always no-embed)
+    kwargs.pop('dynamic_img_size', None)  # NaFlexVit always supports dynamic image sizes
 
     # Map EVA's rope parameters
     use_rot_pos_emb = kwargs.pop('use_rot_pos_emb', False)
@@ -2233,7 +2248,7 @@ def _create_naflexvit_from_eva(
         'rope_grid_offset': rope_grid_offset,
         'rope_grid_indexing': rope_grid_indexing,
         'rope_rotate_half': kwargs.pop('rope_rotate_half', False),
-        'rope_ref_feat_shape': kwargs.get('ref_feat_shape', None),
+        'rope_ref_feat_shape': kwargs.pop('ref_feat_shape', None),
         'attn_type': kwargs.pop('attn_type', 'eva'),
         'swiglu_mlp': kwargs.pop('swiglu_mlp', False),
         'qkv_fused': kwargs.pop('qkv_fused', True),

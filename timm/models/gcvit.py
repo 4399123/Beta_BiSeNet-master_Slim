@@ -2,7 +2,8 @@
 
 From scratch implementation of GCViT in the style of timm swin_transformer_v2_cr.py
 
-Global Context Vision Transformers -https://arxiv.org/abs/2206.09959
+Papers:
+* `Global Context Vision Transformers` - https://arxiv.org/abs/2206.09959
 
 @article{hatamizadeh2022global,
   title={Global Context Vision Transformers},
@@ -218,7 +219,8 @@ class WindowAttentionGlobal(nn.Module):
             kv = kv.reshape(B, N, 2, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)
             k, v = kv.unbind(0)
 
-            q = q_global.repeat(B // q_global.shape[0], 1, 1, 1)
+            # windows are image-major (all windows of image 0, then image 1, ...): keep each image's global query with them
+            q = q_global.repeat_interleave(B // q_global.shape[0], dim=0)
             q = q.reshape(B, N, self.num_heads, self.head_dim).permute(0, 2, 1, 3)
         else:
             qkv = self.qkv(x).reshape(B, N, 3, self.num_heads, self.head_dim).permute(2, 0, 3, 1, 4)

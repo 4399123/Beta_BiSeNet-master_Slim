@@ -1,6 +1,7 @@
 """ Sequencer
 
-Paper: `Sequencer: Deep LSTM for Image Classification` - https://arxiv.org/pdf/2205.01972.pdf
+Papers:
+* `Sequencer: Deep LSTM for Image Classification` - https://arxiv.org/abs/2205.01972
 
 """
 #  Copyright (c) 2022. Yuki Tatsunami
@@ -354,6 +355,7 @@ class Sequencer2d(nn.Module):
             union: str = "cat",
             with_fc: bool = True,
             drop_rate: float = 0.,
+            proj_drop_rate: float = 0.,
             drop_path_rate: float = 0.,
             nlhb: bool = False,
             stem_norm: bool = False,
@@ -404,7 +406,7 @@ class Sequencer2d(nn.Module):
                 bidirectional=bidirectional,
                 union=union,
                 with_fc=with_fc,
-                drop=drop_rate,
+                drop=proj_drop_rate,
                 drop_path=drop_path_rate,
                 **dd,
             )]
