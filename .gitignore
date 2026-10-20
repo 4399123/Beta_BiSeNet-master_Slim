@@ -17,3 +17,4 @@ tools/trt/
 openvino_seg/tools/onnx/
 openvino_seg/onnx/
 openvino_seg/lib/premodels/
+.idea/
