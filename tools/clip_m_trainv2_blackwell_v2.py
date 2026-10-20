@@ -35,7 +35,7 @@ from timm.scheduler import CosineLRScheduler
 from torch.utils.tensorboard import SummaryWriter
 from timm.layers.norm_act import convert_sync_batchnorm
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3,4"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0,1,2,3"
 
 ## fix all random seeds (per-rank offset so each process draws a different
 ## augmentation stream; dist isn't initialized yet here, so read the rank from

@@ -5,6 +5,12 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="af36840f-6835-49f5-a8d1-87d380c427c8" name="更改" comment="">
+<<<<<<< HEAD
+      <change beforePath="$PROJECT_DIR$/.idea/Beta_BiSeNet-master_Slim.iml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/Beta_BiSeNet-master_Slim.iml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/misc.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/misc.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/ceshi.txt" beforeDir="false" />
+=======
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/lib/models/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/lib/models/__init__.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/timm/data/__init__.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/data/__init__.py" afterDir="false" />
@@ -190,6 +196,16 @@
       <change beforePath="$PROJECT_DIR$/timm/utils/summary.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/utils/summary.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/timm/version.py" beforeDir="false" afterPath="$PROJECT_DIR$/timm/version.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell_v2.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/clip_m_trainv2_blackwell_v2.py" afterDir="false" />
+<<<<<<< HEAD
+=======
+      <change beforePath="$PROJECT_DIR$/tools/eval_onnx_quantized.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/eval_onnx_quantized.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tools/export_onnx.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/export_onnx.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tools/onnxrun-int8.py" beforeDir="false" afterPath="$PROJECT_DIR$/tools/onnxrun-int8.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/tools/tools/onnx/best_fp16.onnx" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/trt命令.txt" beforeDir="false" afterPath="$PROJECT_DIR$/trt命令.txt" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/测试数据.xlsx" beforeDir="false" afterPath="$PROJECT_DIR$/测试数据.xlsx" afterDir="false" />
+>>>>>>> 330b1b51c89d179a1ff557efbbdb8870648e97c2
+>>>>>>> 3b7b599bbb725419dcd3a33f0ae619284b88ed5f
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -208,22 +224,33 @@
     <option name="hideEmptyMiddlePackages" value="true" />
     <option name="showLibraryContents" value="true" />
   </component>
+<<<<<<< HEAD
+=======
+<<<<<<< HEAD
+>>>>>>> 3b7b599bbb725419dcd3a33f0ae619284b88ed5f
   <component name="PropertiesComponent"><![CDATA[{
   "keyToString": {
     "Python.check_onnx_bn.executor": "Run",
     "Python.cpubone_nano.executor": "Run",
+<<<<<<< HEAD
     "Python.deepseek_v4_flash_vision_exp.executor": "Run",
+=======
+>>>>>>> 3b7b599bbb725419dcd3a33f0ae619284b88ed5f
     "Python.diagnose_fp16.executor": "Run",
     "Python.eval_onnx_quantized.executor": "Run",
     "Python.export_onnx.executor": "Run",
     "Python.export_onnx_fp16.executor": "Run",
     "Python.export_onnx_int8.executor": "Run",
+<<<<<<< HEAD
     "Python.export_onnx_int8_fast.executor": "Run",
+=======
+>>>>>>> 3b7b599bbb725419dcd3a33f0ae619284b88ed5f
     "Python.export_onnx_新方案.executor": "Run",
     "Python.fastefficientbisenet_hgnetv2_b6.executor": "Run",
     "Python.fastefficientbisenet_inceptionnext_tiny.executor": "Run",
     "Python.fastefficientbisenet_inceptionnext_tiny_pro.executor": "Run",
     "Python.fastefficientbisenet_inceptionnext_tiny_pro_max.executor": "Run",
+<<<<<<< HEAD
     "Python.fastefficientbisenet_mambaout_femto.executor": "Run",
     "Python.fastefficientbisenet_mobilenetv5.executor": "Run",
     "Python.hgnetv2_b6.executor": "Run",
@@ -232,10 +259,17 @@
     "Python.mambaout_femto.executor": "Run",
     "Python.mask_classification_decoder_demo.executor": "Debug",
     "Python.mobilenetv5.executor": "Run",
+=======
+    "Python.hgnetv2_b6.executor": "Run",
+    "Python.inceptionnext_tiny.executor": "Run",
+    "Python.lcnetv2_small.executor": "Run",
+    "Python.mask_classification_decoder_demo.executor": "Debug",
+>>>>>>> 3b7b599bbb725419dcd3a33f0ae619284b88ed5f
     "Python.onnxrun-fp16.executor": "Run",
     "Python.onnxrun-int8.executor": "Run",
     "Python.onnxrun.executor": "Run",
     "Python.proseg_hgnetv2_b6.executor": "Run",
+<<<<<<< HEAD
     "Python.qwen3_5_0_8b.executor": "Run",
     "Python.repvit_m0_9.executor": "Run",
     "Python.segformer_qwen3_5_0_8b.executor": "Run",
@@ -245,6 +279,53 @@
     "git-widget-placeholder": "main",
     "last_opened_file_path": "D:/F/ABlueFaceProj/20240618/Seg/Beta_BiSeNet-master_Slim/configs",
     "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+=======
+    "Python.repvit_m0_9.executor": "Run",
+    "Python.trtrun.executor": "Run",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "codeReviewSummary": "[]",
+    "git-widget-placeholder": "main",
+    "last_opened_file_path": "D:/F/ABlueFaceProj/20240618/Seg/Beta_BiSeNet-master_Slim/tools",
+    "settings.editor.selected.configurable": "com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable"
+=======
+  <component name="PropertiesComponent">{
+  &quot;keyToString&quot;: {
+    &quot;Python.check_onnx_bn.executor&quot;: &quot;Run&quot;,
+    &quot;Python.cpubone_nano.executor&quot;: &quot;Run&quot;,
+    &quot;Python.deepseek_v4_flash_vision_exp.executor&quot;: &quot;Run&quot;,
+    &quot;Python.diagnose_fp16.executor&quot;: &quot;Run&quot;,
+    &quot;Python.eval_onnx_quantized.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx_fp16.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx_int8.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx_int8_fast.executor&quot;: &quot;Run&quot;,
+    &quot;Python.export_onnx_新方案.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_inceptionnext_tiny.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_inceptionnext_tiny_pro.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_inceptionnext_tiny_pro_max.executor&quot;: &quot;Run&quot;,
+    &quot;Python.fastefficientbisenet_mambaout_femto.executor&quot;: &quot;Run&quot;,
+    &quot;Python.hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;Python.inceptionnext_tiny.executor&quot;: &quot;Run&quot;,
+    &quot;Python.lcnetv2_small.executor&quot;: &quot;Run&quot;,
+    &quot;Python.mambaout_femto.executor&quot;: &quot;Run&quot;,
+    &quot;Python.mask_classification_decoder_demo.executor&quot;: &quot;Debug&quot;,
+    &quot;Python.onnxrun-fp16.executor&quot;: &quot;Run&quot;,
+    &quot;Python.onnxrun-int8.executor&quot;: &quot;Run&quot;,
+    &quot;Python.onnxrun.executor&quot;: &quot;Run&quot;,
+    &quot;Python.proseg_hgnetv2_b6.executor&quot;: &quot;Run&quot;,
+    &quot;Python.qwen3_5_0_8b.executor&quot;: &quot;Run&quot;,
+    &quot;Python.repvit_m0_9.executor&quot;: &quot;Run&quot;,
+    &quot;Python.segformer_qwen3_5_0_8b.executor&quot;: &quot;Run&quot;,
+    &quot;Python.trtrun.executor&quot;: &quot;Run&quot;,
+    &quot;RunOnceActivity.ShowReadmeOnStart&quot;: &quot;true&quot;,
+    &quot;RunOnceActivity.git.unshallow&quot;: &quot;true&quot;,
+    &quot;git-widget-placeholder&quot;: &quot;main&quot;,
+    &quot;last_opened_file_path&quot;: &quot;D:/F/ABlueFaceProj/20240618/Seg/Beta_BiSeNet-master_Slim/lib/data&quot;,
+    &quot;settings.editor.selected.configurable&quot;: &quot;com.jetbrains.python.configuration.PyActiveSdkModuleConfigurable&quot;
+>>>>>>> 330b1b51c89d179a1ff557efbbdb8870648e97c2
+>>>>>>> 3b7b599bbb725419dcd3a33f0ae619284b88ed5f
   }
 }]]></component>
   <component name="RecentsManager">
