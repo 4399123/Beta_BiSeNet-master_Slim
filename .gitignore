@@ -18,3 +18,6 @@ openvino_seg/tools/onnx/
 openvino_seg/onnx/
 openvino_seg/lib/premodels/
 .idea/
+lib/__pycache__/
+timm/scheduler/__pycache__/
+tools/__pycache__/

@@ -401,6 +401,102 @@ class OptimizedCombinedLoss(nn.Module):
         return total_loss
 
 
+# ==================== 修复版 FocalTverskyLoss ====================
+class ImprovedFocalTverskyLoss(nn.Module):
+    """
+    修复版 FocalTverskyLoss - 按类别像素数归一化
+
+    核心改进：
+    1. 按每个类别的像素数归一化（而非全图像素数），避免小类别数值过小导致梯度消失
+    2. 保持其他优势：逐类独立计算、可调 FP/FN 权衡、Focal 调制
+
+    适用场景：
+    - 极度不平衡数据集（类别像素数差异 >100 倍）
+    - 工业质检（漏检代价高，需要 beta > alpha）
+    - 小目标检测（微小缺陷、裂纹等）
+
+    参数说明：
+    - alpha: False Positive 权重，默认 0.3
+    - beta: False Negative 权重，默认 0.7（beta > alpha 偏重召回率）
+    - gamma: Focal 调制指数，默认 1.33（越大越聚焦难例）
+    - smooth: 平滑项，避免除零
+    """
+    def __init__(self, ignore_index=255, smooth=1.0, alpha=0.3, beta=0.7, gamma=1.33):
+        super(ImprovedFocalTverskyLoss, self).__init__()
+        self.ignore_index = ignore_index
+        self.smooth = smooth
+        self.alpha = alpha
+        self.beta = beta
+        self.gamma = gamma
+
+    def forward(self, input, target):
+        input, target = flatten(input, target, self.ignore_index)
+        # 用 fp32 计算，数值更稳（即使关闭 AMP 也无副作用）
+        input = softmax(input.float(), dim=1)
+        num_classes = input.size(1)
+        n_valid = input.size(0)  # 有效像素总数（已过滤 ignore）
+        if n_valid == 0:
+            return input.sum() * 0.0  # 全 ignore batch，返回 0 梯度
+
+        losses = []
+        for c in range(num_classes):
+            target_c = (target == c).float()
+            input_c = input[:, c]
+
+            # 本 batch 中不存在该类：跳过。否则 FP 为全图概率和，T≈0、loss≈1
+            # 且几乎无梯度，会抬高 loss 下限并稀释其它类。该类误检仍由 OhemCE 惩罚。
+            if target_c.sum() == 0:
+                continue
+
+            # 不再除以类别像素数：TP/FP/FN 同除 n_c 等价于把 smooth 放大到 n_c，
+            # 会让整类全漏时 loss 仅约 0.3。Tversky 本身是比值，已与类别大小无关。
+            t_p = (input_c * target_c).sum()  # True Positive
+            f_p = ((1 - target_c) * input_c).sum()  # False Positive
+            f_n = (target_c * (1 - input_c)).sum()  # False Negative
+
+            # Tversky Index: 可调 FP/FN 权衡
+            tversky = (t_p + self.smooth) / (t_p + self.alpha * f_p + self.beta * f_n + self.smooth)
+
+            # Focal 调制: gamma>=1 保证数值稳定
+            # gamma 越大，越聚焦难分类样本（通常是小目标边界）
+            one_minus_tversky = (1.0 - tversky).clamp(min=0.0, max=1.0)
+            focal_tversky = one_minus_tversky ** self.gamma
+            losses.append(focal_tversky)
+
+        if not losses:
+            return input.sum() * 0.0
+        losses = torch.stack(losses)
+        loss = losses.mean()  # 本 batch 出现的类别等权重平均
+        return loss
+
+
+class ImprovedFocalTverskyWithOhemCELoss(nn.Module):
+    """
+    修复版 FocalTversky + OhemCE 组合损失
+
+    推荐配置：
+    - 保守（平衡精度和召回）: alpha=0.3, beta=0.7, gamma=1.33
+    - 激进（最大化召回率）: alpha=0.2, beta=0.8, gamma=1.5
+    - 如果误检代价也高: alpha=0.4, beta=0.6, gamma=1.2
+    """
+    def __init__(self, ignore_index=255, thresh=0.7,
+                 alpha=0.3, beta=0.7, gamma=1.33, smooth=1.0,
+                 tversky_weight=1.0, ohem_weight=1.0):
+        super(ImprovedFocalTverskyWithOhemCELoss, self).__init__()
+        self.ft_loss = ImprovedFocalTverskyLoss(
+            ignore_index=ignore_index, smooth=smooth,
+            alpha=alpha, beta=beta, gamma=gamma
+        )
+        self.ohem_loss = OhemCELoss(thresh, lb_ignore=ignore_index)
+        self.tversky_weight = tversky_weight
+        self.ohem_weight = ohem_weight
+
+    def forward(self, preds, targets):
+        ohemloss = self.ohem_loss(preds, targets)
+        ft_loss = self.ft_loss(preds, targets)
+        return self.ohem_weight * ohemloss + self.tversky_weight * ft_loss
+
+
 
 if __name__ == '__main__':
     pass
