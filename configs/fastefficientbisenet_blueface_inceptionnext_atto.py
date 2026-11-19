@@ -14,7 +14,7 @@ cfg = dict(
     cropsize=[512, 512],
     ims_per_gpu=48,
     eval_ims_per_gpu=1,
-    use_fp16=False,
+    use_fp16=True,
     use_sync_bn=True,
     respth='./res',
 )

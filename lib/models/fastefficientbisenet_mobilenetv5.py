@@ -133,47 +133,47 @@ class FastEfficientBiSeNet_MobileNetV5(nn.Module):
             self.aux_head_c5 = SegmentationHead(128, n_classes, scale_factor=32)
 
     def forward(self, x):
-        with autocast(enabled=self.use_fp16):
+        # with autocast(enabled=self.use_fp16):
             # 获取输入尺寸，仅用于校验或备用，不再用于动态 Resize
-            H, W = x.size()[2:]
+        H, W = x.size()[2:]
 
-            # Encoder
-            feat8, feat16, feat32 = self.backbone(x)
+        # Encoder
+        feat8, feat16, feat32 = self.backbone(x)
 
-            # Projections
-            c5 = self.proj_c5(feat32)
-            c4 = self.proj_c4(feat16)
-            c3 = self.proj_c3(feat8)
+        # Projections
+        c5 = self.proj_c5(feat32)
+        c4 = self.proj_c4(feat16)
+        c3 = self.proj_c3(feat8)
 
-            # SPPF
-            c5_sppf = self.sppf(c5)
+        # SPPF
+        c5_sppf = self.sppf(c5)
 
-            # Context Fusion
-            feat_context = self.fuse_context(c5_sppf, c4)
+        # Context Fusion
+        feat_context = self.fuse_context(c5_sppf, c4)
 
-            # Spatial Fusion
-            feat_final = self.fuse_final(feat_context, c3)
+        # Spatial Fusion
+        feat_final = self.fuse_final(feat_context, c3)
 
-            # Output Head
-            # 直接信任 Head 内部的 scale_factor=8 能还原回 (H, W)
-            # 只要 H, W 是 32 的倍数，这里一定是对齐的
-            logits = self.head(feat_final)
+        # Output Head
+        # 直接信任 Head 内部的 scale_factor=8 能还原回 (H, W)
+        # 只要 H, W 是 32 的倍数，这里一定是对齐的
+        logits = self.head(feat_final)
 
-            if self.aux_mode == 'train':
-                # 同理，信任 scale_factor 16 和 32
-                aux_out1 = self.aux_head_c4(c4)
-                aux_out2 = self.aux_head_c5(c5_sppf)
-                return logits, aux_out1, aux_out2
+        if self.aux_mode == 'train':
+            # 同理，信任 scale_factor 16 和 32
+            aux_out1 = self.aux_head_c4(c4)
+            aux_out2 = self.aux_head_c5(c5_sppf)
+            return logits, aux_out1, aux_out2
 
-            elif self.aux_mode == 'eval':
-                return logits,
+        elif self.aux_mode == 'eval':
+            return logits,
 
-            elif self.aux_mode == 'pred':
-                pred = torch.argmax(logits, dim=1)
-                return  pred.float()   #trt11,不能使用float(),否则会报错
-                # return pred
-            else:
-                raise NotImplementedError
+        elif self.aux_mode == 'pred':
+            pred = torch.argmax(logits, dim=1)
+            return  pred.float()   #trt11,不能使用float(),否则会报错
+            # return pred
+        else:
+            raise NotImplementedError
 
 
 if __name__ == "__main__":

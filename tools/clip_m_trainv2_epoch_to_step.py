@@ -62,7 +62,7 @@ torch.cuda.manual_seed(42 + _rank)
 np.random.seed(42 + _rank)
 random.seed(42 + _rank)
 #  torch.backends.cudnn.deterministic = True
-#  torch.backends.cudnn.benchmark = True
+torch.backends.cudnn.benchmark = True
 #  torch.multiprocessing.set_sharing_strategy('file_system')
 printlabels = ['background', 'QPZZ', 'MDBD', 'MNYW', 'WW', 'LMPS', 'BMQQ', 'LMHH', 'KTAK']
 
@@ -299,7 +299,7 @@ def train(writer):
             # 辅助头权重仍可按 epoch 衰减（保留原逻辑）
             aux_weight = 0.5 * (1 - epoch / max_epochs)
 
-            with amp.autocast(enabled=cfg.use_fp16):
+            with torch.amp.autocast('cuda', dtype=torch.bfloat16, enabled=cfg.use_fp16):
                 logits, *logits_aux = net(im)
                 loss_pre = criteria_pre(logits, lb)
                 if cfg.num_aux_heads > 0:
