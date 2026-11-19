@@ -365,12 +365,19 @@ def train(writer):
             cfg, net.module, printlabels)
         net.train()  # 重要：验证后恢复训练模式
 
-        logger.info('\neval results of miou metric:')
-        logger.info('\n' + tabulate(iou_content, headers=iou_heads, tablefmt='orgtbl'))
-        logger.info('\neval results of mprecision metric:')
-        logger.info('\n' + tabulate(precision_content, headers=precision_heads, tablefmt='orgtbl'))
-        logger.info('\neval results of mrecall metric:')
-        logger.info('\n' + tabulate(recall_content, headers=recall_heads, tablefmt='orgtbl'))
+        # 三个指标合并成一个表显示（按类别名对齐，不改动原始结果）
+        p_map = {r[0]: r[-1] for r in precision_content}
+        r_map = {r[0]: r[-1] for r in recall_content}
+        merged = []
+        for row in iou_content:
+            name, ratio, iou = row[0], row[1], row[-1]
+            if name == 'mious':
+                merged.append(['mean', '-', iou,
+                               p_map.get('mprecision', '-'), r_map.get('mrecall', '-')])
+            else:
+                merged.append([name, ratio, iou, p_map.get(name, '-'), r_map.get(name, '-')])
+        logger.info('\neval results:\n' + tabulate(
+            merged, headers=['class', 'ratio', 'iou', 'precision', 'recall'], tablefmt='orgtbl'))
 
         # TensorBoard 记录（按 epoch）
         writer.add_scalar('miou_epoch', float(iou_content[-2][-1]), epoch)
